@@ -1,388 +1,1395 @@
-// THE GIRL WHO WAS MAILED TO GRANDMA: the shot list (Tall Tale 3D example).
-// A shot: { id, at, note, draw(lt, d, t, blit) }: pose the cut-out people, move the camera, E.render(...), blit(),
-// then any 2D overlay. Every shot moves the camera. Times come from the voice: cut(i) = just before line i,
-// Wd('word', i) = when that word is said.
+// Roy's Breakup Rewind: The Complete Shot List (Tall Tale 3D)
+// PROBLEM 1 RESOLUTION: Full-body auto-framing system (src/core/framing.js)
+// Guaranteed head-to-toe visibility, hand containment, and shot grammar.
 import * as THREE from 'three';
-import { ctx, clamp, lerp, seg, eo, eio, eob } from './core/lib.js';
-import { L, Wd, T } from './core/timing.js';
+import { W, H, ctx, clamp, lerp, seg, eo, eio, eob, TAU, bigText } from './core/lib.js';
+import { L, Le, Wd, T, rhubarbTalk } from './core/timing.js';
 import { camera } from './core/engine.js';
 import * as WD from './core/world.js';
 import * as PR from './core/props.js';
-import { Toon, PROPS } from './core/toon.js';
-import { createCharacter, reach, retargetClip } from './core/character.js';
-import { createPuppet } from './core/puppet.js';
-
-export { createCharacter, reach, retargetClip, createPuppet };
+import { Toon, PROPS, INK } from './core/toon.js';
+import { computeFraming, projectToScreen, validateShotSequence, SHOT_SIZES } from './core/framing.js';
+import { setEmotion, evaluateEmotion, applyEmotion, EMOTION_PRESETS } from './core/emotion.js';
+import { GLOBAL_MOOD, applyMoodToScene, drawMoodGrading, dressBedroom, dressCafe, dressMeadow, getCameraFeelOffset } from './core/mood_world.js';
 
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const mix = (a, b, k) => a.clone().lerp(b, k);
-const talk = (t, on = 1) => (on ? 0.25 + 0.75 * Math.abs(Math.sin(t * 13)) * (0.6 + 0.4 * Math.sin(t * 5.3)) : 0);
-const blink = (t, off = 0) => (((t + off) % 3.3) < 0.12 ? 1 : 0);
+const blink = (t, off = 0) => (((t + off) % 3.2) < 0.12 ? 1 : 0);
 
-// the cast (original characters, Tall Tale recipe)
+// Cast configuration
 const LOOK = {
-  may: { body: '#7FC8E8', hat: 'bow', hatCol: '#D8343F', hairCol: '#7A4A2E', kid: true, neck: 'collar', pattern: 'stamps', stamps: 0 },
-  dad: { body: '#6FA35A', pattern: 'overalls', patCol: '#3E5FA8', hat: 'boater', hatCol: '#E8C77A', band: '#B5372E', extra: ['mustache'] },
-  mom: { body: '#B98ACF', hat: 'bun', hatCol: '#7A4A2E', pattern: 'apron' },
-  clerk: { body: '#4FB3A9', hat: 'visor', hatCol: '#2F8F5B', neck: 'collar', pattern: 'vest', patCol: '#2B5E73', extra: ['pencil'] },
-  grandma: { body: '#E58A6A', hat: 'bun', hatCol: '#D9D9E2', pattern: 'apron', patCol: '#FFF4E0', extra: ['glasses', 'blush'] },
-  cousin: { body: '#3E5FA8', hat: 'mailcap', hatCol: '#2E4E8A', neck: 'tie', neckCol: '#E2B33C' },
-  boss: { body: '#4A4560', hat: 'tophat', hatCol: '#2A2638', neck: 'bowtie', neckCol: '#D8343F', dots: 1, pattern: 'vest', patCol: '#2A2638', extra: ['monocle', 'mustache'] },
-  sister: { body: '#F2C230', hat: 'bow', hatCol: '#3C6FB6', hairCol: '#3A2A22', kid: true, pattern: 'stamps', stamps: 4, extra: ['freckles'] },
+  roy: {
+    body: '#2563EB', // Blue hoodie
+    head: '#FDE047', // Warm cartoon head
+    hat: 'beanie',
+    hatCol: '#1E293B',
+    neck: 'collar',
+    neckCol: '#FFFFFF',
+    extra: ['freckles'],
+  },
+  ex: {
+    body: '#334155', // Faceless silhouette / neutral tone
+    head: '#475569',
+    hat: 'bun',
+    hatCol: '#1E293B',
+    neck: 'scarf',
+    neckCol: '#64748B',
+    extra: [],
+  },
+  friendDave: {
+    body: '#059669', // Emerald sweater
+    head: '#FDE047',
+    hat: 'cap',
+    hatCol: '#047857',
+    neck: 'collar',
+    extra: ['mustache'],
+  },
+  friendSam: {
+    body: '#D97706', // Amber flannel
+    head: '#FDE047',
+    hat: 'none',
+    neck: 'bowtie',
+    neckCol: '#B45309',
+    extra: ['glasses'],
+  },
 };
+
 const person = (k, opts) => new Toon({ ...LOOK[k], extra: [...(LOOK[k].extra || [])] }, opts);
 
 export function buildShots(E) {
   const S = [], CUES = [], add = (o) => (S.push(o), o);
   const cue = (t, typeOrFn, o = {}) => {
-    if (typeof typeOrFn === 'function') {
-      typeOrFn(t);
-      return;
-    }
+    if (typeof typeOrFn === 'function') { typeOrFn(t); return; }
     CUES.push({ t: +t.toFixed(3), type: typeOrFn, ...o });
   };
-  const cut = (i) => (i === 0 ? 0 : L(i) - 0.06);
-  const cam = camera(36);
-  const LOOKS = { street: { bloom: 0.15, aperture: 0.0012, maxblur: 0.008 }, room: { bloom: 0.3, aperture: 0.001, maxblur: 0.008 }, field: { bloom: 0.25, aperture: 0.001, maxblur: 0.007 } };
-  const shoot = (scene, people, from, to, at, at2, k, look, focus) => {
-    if (cam.fov !== (look.fov || 36)) { cam.fov = look.fov || 36; cam.updateProjectionMatrix(); }
-    cam.position.copy(mix(from, to, k)); cam.lookAt(at2 ? mix(at, at2, k) : at);
-    people.forEach((p) => p.face(cam));
-    E.render(scene, cam, { ...look, focus: focus ?? cam.position.distanceTo(at2 ? mix(at, at2, k) : at) });
+  const cut = (i) => (i === 0 ? 0 : L(i) - 0.05);
+  const cam = camera(38);
+
+  const shoot = (scene, people, from, to, at, at2, k, look = {}, focus = null) => {
+    if (cam.fov !== (look.fov || 38)) { cam.fov = look.fov || 38; cam.updateProjectionMatrix(); }
+    cam.position.copy(mix(from, to, k));
+    cam.lookAt(at2 ? mix(at, at2, k) : at);
+    people.forEach((p) => p && p.face && p.face(cam));
+    E.render(scene, cam, {
+      bloom: look.bloom ?? 0.2,
+      aperture: look.aperture ?? 0.001,
+      maxblur: look.maxblur ?? 0.008,
+      focus: focus ?? cam.position.distanceTo(at2 ? mix(at, at2, k) : at),
+    });
   };
 
-  // ── sets ─────────────────────────────────────────────────────────────
-  const SHOP_ORDER = [['BAKERY', '#C9603F', 'brick', '#D8343F'], ['GENERAL STORE', '#6FA3B8', 'wood', null], ['BARBER', '#E3C16F', 'wood', '#3C6FB6'], ['GRAND HOTEL', '#9E4A3A', 'brick', null],
-    ['TAILOR', '#B98ACF', 'wood', '#2E4E3F'], ['POST OFFICE', '#7FA36A', 'brick', '#2E4E8A'], ['HARDWARE', '#B5553C', 'brick', '#F2C230'], ['CAFE', '#E58A6A', 'wood', '#2E4E3F'],
-    ['BANK', '#C7B79A', 'brick', null], ['PHARMACY', '#5FA39A', 'wood', '#D8343F'], ['SHOES', '#D9A34A', 'wood', null], ['THEATER', '#A3485A', 'brick', '#F2C230']];
-  const ST = WD.mainStreet(E, { shops: SHOP_ORDER });
-  ST.sun.key.target.position.set(-4, 0, 0); ST.sun.key.position.set(5, 13, 6);
-  const PO = ST.buildings.find((b) => b.name === 'POST OFFICE');            // front at x -6.2, centred on PO.z
-  const stDad = person('dad'), stMom = person('mom'), stMay = person('may', { height: 1.4 }), stMan = person('cousin');
-  [stDad, stMom, stMay, stMan].forEach((p) => ST.scene.add(p.group));
-  const piles = []; for (let i = 0; i < 6; i++) { const p = PR.parcel(0.5 + (i % 3) * 0.1, 0.32 + (i % 2) * 0.1, 0.42); p.position.set(-5.6 + (i % 2) * 0.55, 0.18 + Math.floor(i / 2) * 0.0, PO.z - 1.6 + i * 0.45); p.rotation.y = i * 0.4; ST.scene.add(p); piles.push(p); }
-  const streetPeople = () => [...ST.people, stDad, stMom, stMay, stMan];
+  // Helper for dynamic auto-framing
+  const autoFrame = (shotType, charObj, opts = {}) => computeFraming(shotType, charObj, cam, opts);
 
-  const view = (scene, from, look, people = []) => { const c = new THREE.PerspectiveCamera(42, 4 / 3, 0.1, 800); c.position.copy(from); c.lookAt(look); people.forEach((p) => p.face(c)); const t = WD.snapshot(E, scene, c); t.wrapS = THREE.RepeatWrapping; return t; };
+  // Helper for mood-reactive 3D lighting, camera feel and scene shooting
+  function shootMood(scene, people, f0, f1, k, t, opts = {}) {
+    const mood = GLOBAL_MOOD.evaluate(t);
+    applyMoodToScene(scene, mood, f0.camPos, t);
+    const feel = getCameraFeelOffset(mood, t);
+    const p0 = f0.camPos.clone().add(feel);
+    const p1 = f1.camPos.clone().add(feel);
+    shoot(scene, people, p0, p1, f0.target, f1.target, k, opts);
+    return mood;
+  }
 
-  // post office inside: counter on the right (x 2.2..3.2), clerk behind it, scale on the counter
-  const IN = WD.interior(E, { wall: '#2F6B5A', motif: '#3B7D69', ceiling: '#5A3A2A', signText: 'PARCEL POST', view: view(ST.scene, V3(2, 1.8, -12), V3(-3, 2.2, 10), ST.people), picture: false });
-  { const cb = PR.cubbies(2.6, 2.2); cb.position.set(-2.4, 0.95, -6.75); IN.scene.add(cb);
-    const sb = WD.signBoard('U.S. POST OFFICE', { w: 3.0, h: 0.5, bg: '#2E4E8A', fg: '#F2E6CF' }); sb.position.set(0, 3.55, -6.86); IN.scene.add(sb);
-    [[-3.3, -4.6], [-3.2, -3.9], [-3.4, -3.2]].forEach(([x, z], i) => { const s = PR.mailSack(0.9 + i * 0.1); s.position.set(x, 0, z); IN.scene.add(s); });
-    [[-3.3, -1.8, 0], [-3.1, -1.3, 0.32]].forEach(([x, z, y], i) => { const p = PR.parcel(0.6, 0.4, 0.5); p.position.set(x, y, z); p.rotation.y = i; IN.scene.add(p); }); }
-  const scale = PR.platformScale(); scale.position.set(2.7, 1.18, -2.0); IN.scene.add(scale);
-  const chicks = PR.chickCrate(6); chicks.position.set(2.7, 1.18, -3.6); chicks.rotation.y = -0.5; chicks.visible = false; IN.scene.add(chicks);
-  const box = PR.parcel(0.9, 0.55, 0.7, true); box.position.set(1.2, 0, -1.9); box.visible = false; IN.scene.add(box);
-  const inClerk = person('clerk'), inMay = person('may', { height: 1.4 }), inDad = person('dad'), inMom = person('mom'), inSis = person('sister', { height: 1.4 });
-  inClerk.at(3.55, 0, -2.5); inSis.at(1.2, 0, -1.95); inSis.group.visible = false;
-  [inClerk, inMay, inDad, inMom, inSis].forEach((p) => IN.scene.add(p.group));
-  const inPeople = [inClerk, inMay, inDad, inMom, inSis];
+  // ── 3D Sets Setup ────────────────────────────────────────────────────────
+  // Set 1: Dark Bedroom / Night Desk (Cold Blue Grade for Attempts 1 & 2)
+  const BEDROOM = WD.interior(E, {
+    w: 8, depth: 7, h: 4.5,
+    wall: '#0F172A', motif: '#1E293B', floor: '#1E293B', ceiling: '#0B0F19',
+    signText: null, counterOn: false, picture: false, bulbs: false
+  });
+  const desk = PR.desk ? PR.desk() : PR.parcel(1.8, 0.75, 0.9);
+  desk.position.set(0, 0, -2.1);
+  BEDROOM.scene.add(desk);
 
-  // the countryside: home (left) and grandma's house (right), a signpost
-  const MD = WD.meadow(E, { fenceOn: false }); MD.sun.key.position.set(9, 14, 8); MD.sun.key.target.position.set(5, 0, -6);
-  Object.assign(MD.sun.key.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22 }); MD.sun.key.shadow.camera.updateProjectionMatrix();
-  const home = PR.house({ wall: '#F2E6CF', roof: '#B5553C', door: '#3C6FB6' }); home.position.set(0, 0, -6); MD.scene.add(home);
-  const gma = PR.house({ wall: '#F2C9D6', roof: '#3E5FA8', door: '#D8343F', trim: '#FFFFFF' }); gma.position.set(12, 0, -9); gma.rotation.y = -0.35; MD.scene.add(gma);
-  const post = PR.signpost([['LEWISTON  73 MI', 'r'], ['GRANGEVILLE', 'l']]); post.position.set(5.5, 0, 2.5); MD.scene.add(post);
-  { const f = WD.fence(10); f.position.set(-12, 0, -1); MD.scene.add(f); const f2 = WD.fence(8); f2.position.set(15, 0, -2); MD.scene.add(f2); }
-  const mdDad = person('dad'), mdMom = person('mom'), mdMay = person('may', { height: 1.4 }), mdGma = person('grandma'), mdCousin = person('cousin');
-  [mdDad, mdMom, mdMay, mdGma, mdCousin].forEach((p) => MD.scene.add(p.group));
-  const gDoor = new THREE.Vector3(); const gmaFront = (dx, dz) => gma.localToWorld(V3(dx, 0, dz));
-  const mdPeople = [mdDad, mdMom, mdMay, mdGma, mdCousin];
+  const royNight = person('roy');
+  BEDROOM.scene.add(royNight.group);
+  royNight.at(0, 0, -1.8);
 
-  // the railway: a second meadow with tracks and the mail train
-  const TR = WD.meadow(E, { fenceOn: false, treesOn: false }); TR.sun.key.position.set(6, 12, 10); TR.sun.key.target.position.set(0, 0, -12);
-  const rl = PR.rails(400); rl.position.set(0, 0, -12); TR.scene.add(rl); const tr = PR.train(); tr.position.set(0, 0, -12); TR.scene.add(tr);
-  { const p = WD.pole(6); for (let x = -60; x < 80; x += 14) { const q = p.clone(); q.position.set(x, 0, -15); TR.scene.add(q); } }
+  // Set 2: Street Cafe / Sidewalk (Attempt 2 - Closure Meeting)
+  const CAFE = WD.mainStreet(E, { len: 45, dusk: true, people: false, cars: false });
+  const royCafe = person('roy');
+  const exSilhouette = person('ex');
+  CAFE.scene.add(royCafe.group);
+  CAFE.scene.add(exSilhouette.group);
+  royCafe.at(-0.8, 0.18, -3.5);
+  exSilhouette.at(0.8, 0.18, -3.5);
 
-  // the mail car (inside): sorting counter on the right, cubbies on the left, the meadow rolling past the window
-  const MC = WD.interior(E, { w: 4.4, depth: 8, h: 3.4, wall: '#7A5236', motif: '#86603F', floor: '#8A5A36', ceiling: '#3A2A20', signText: null, picture: false, litter: false,
-    view: (tr.position.x = 500, view(TR.scene, V3(0, 1.6, 8), V3(0, 2.2, -40))) });
-  MC.window.material.map.repeat.set(0.5, 1);
-  { const cb = PR.cubbies(3.4, 1.6); cb.position.set(-2.0, 1.0, -4.2); cb.rotation.y = Math.PI / 2; MC.scene.add(cb);
-    [[-1.3, -5.6, 1], [-0.7, -6.2, 0.9], [-1.5, -6.4, 1.1], [0.2, -6.5, 0.95]].forEach(([x, z, s]) => { const m = PR.mailSack(s); m.position.set(x, 0, z); MC.scene.add(m); }); }
-  const mcMay = person('may', { height: 1.4 }), mcCousin = person('cousin'); [mcMay, mcCousin].forEach((p) => MC.scene.add(p.group));
-  mcMay.restyle({ stamps: 10 });
-  const seat = PR.mailSack(1.15); seat.position.set(-0.75, 0, -3.95); MC.scene.add(seat);
+  // Set 3: Warm Park / Morning Pathway (Attempt 3 & Sunrise Walk)
+  const MEADOW = WD.meadow(E, { sunset: true, fenceOn: false });
+  const royDay = person('roy');
+  const dave = person('friendDave');
+  const sam = person('friendSam');
+  MEADOW.scene.add(royDay.group);
+  MEADOW.scene.add(dave.group);
+  MEADOW.scene.add(sam.group);
+  royDay.at(0, 0, -4);
+  dave.at(-0.9, 0, -4.1);
+  sam.at(0.9, 0, -4.1);
 
-  // the Postmaster General's office
-  const OF = WD.interior(E, { w: 7, depth: 6, wall: '#2E4E8A', motif: '#3A5E9C', ceiling: '#2A2638', floor: '#7A3E24', signText: null, counterOn: false, litter: false,
-    view: view(ST.scene, V3(0, 6, 6), V3(0, 3, -40)) });
-  const dk = PR.desk(2.4); dk.position.set(0.4, 0, -3.2); OF.scene.add(dk);
-  const notice = PR.poster(['NOTICE', '!NO PEOPLE', 'MAY BE SENT', 'BY MAIL', 'POSTMASTER GENERAL'], { w: 1.3, h: 1.7 }); notice.position.set(-2.4, 2.1, -5.87); OF.scene.add(notice);
-  { const fl = WD.signBoard('POSTMASTER GENERAL', { w: 2.4, h: 0.4, bg: '#2A2638', fg: '#E2B33C' }); fl.position.set(0, 3.55, -5.88); OF.scene.add(fl);
-    const p = PR.parcel(0.4, 0.15, 0.3); p.position.set(1.2, 0.88, -3.1); OF.scene.add(p); }
-  const ofBoss = person('boss'); ofBoss.at(0.4, 0, -3.95); OF.scene.add(ofBoss.group);
+  // ── Problem 3: Rich Multi-Layer Set Dressing (15-25 Props per scene) ─────
+  dressBedroom(BEDROOM.scene);
+  dressCafe(CAFE.scene);
+  dressMeadow(MEADOW.scene);
 
-  // ── 1 · HOOK, outside: "In 1914, a couple in Idaho" (crane down the street to the post office) ──
-  const s1b = Wd('mailed', 0) - 0.12;
-  { const st = cut(0);
-    add({ id: 'S01', at: st, note: 'crane down main street to the post office; the family arrives', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); const z = PO.z;
-      stDad.at(-5.0, 0.18, z - 3.2 + k * 1.6); stMom.at(-4.6, 0.18, z - 2.4 + k * 1.6); stMay.at(-4.8, 0.18, z - 2.8 + k * 1.6);
-      [stDad, stMom].forEach((p, i) => p.set({ legs: 'walk', phase: t * 7 + i * 2, mood: 'happy', blink: blink(t, i) }));
-      stMay.set({ legs: 'walk', phase: t * 9, mood: 'happy', armL: [40, 20], blink: blink(t, 1.3) });
-      stMan.group.visible = false; piles.forEach((p) => (p.visible = false));
-      shoot(ST.scene, streetPeople(), V3(0.5, 6.0, z - 22), V3(-2.3, 1.7, z - 6.4), V3(-2.5, 3.0, z), V3(-4.8, 1.25, z - 1.5), k, { ...LOOKS.street, fov: 44 });
-      blit();
-    } });
-    cue(st + 0.05, 'whoosh', { gain: 0.6 }); cue(Wd('1914', 0), 'ding', { gain: 0.7 }); }
+  // ── Problem 3: Global Mood Timeline Transitions (0.5 - 1.0s blends) ─────
+  GLOBAL_MOOD.cues = [];
+  GLOBAL_MOOD.setMood('shocked', { at: cut(0), blendTime: 0.3 });
+  GLOBAL_MOOD.setMood('anxious', { at: cut(1), blendTime: 0.4 });
+  GLOBAL_MOOD.setMood('comedic', { at: cut(2), blendTime: 0.4 });
+  GLOBAL_MOOD.setMood('angry', { at: cut(3), blendTime: 0.35 });
+  GLOBAL_MOOD.setMood('shocked', { at: cut(4), blendTime: 0.2 });
+  GLOBAL_MOOD.setMood('comedic', { at: cut(5), blendTime: 0.5 });
+  GLOBAL_MOOD.setMood('heartbroken', { at: cut(6), blendTime: 0.4 });
+  GLOBAL_MOOD.setMood('shocked', { at: cut(7), blendTime: 0.2 });
+  GLOBAL_MOOD.setMood('calm', { at: cut(8), blendTime: 0.6 });
+  GLOBAL_MOOD.setMood('sad', { at: cut(9), blendTime: 0.5 });
+  GLOBAL_MOOD.setMood('healing', { at: cut(10), blendTime: 0.5 });
+  GLOBAL_MOOD.setMood('calm', { at: cut(11), blendTime: 0.5 });
+  GLOBAL_MOOD.setMood('healing', { at: cut(12), blendTime: 0.4 });
+  GLOBAL_MOOD.setMood('joyful', { at: cut(13), blendTime: 0.5 });
+  GLOBAL_MOOD.setMood('hopeful', { at: cut(14), blendTime: 0.5 });
+  GLOBAL_MOOD.setMood('hopeful', { at: cut(15), blendTime: 0.6 });
 
-  // ── 2 · "mailed their five year old daughter" (inside: May on the scale, clerk shocked) ──
-  const counterScene = (lt, t, o = {}) => {
-    inMay.at(2.7, 1.26, -1.95); inDad.at(1.65, 0, -2.75); inMom.at(1.0, 0, -3.4);
-    inDad.group.visible = o.dad ?? true; inMom.group.visible = o.mom ?? true; inMay.group.visible = o.may ?? true;
-  };
-  { const st = s1b;
-    add({ id: 'S02', at: st, note: 'May stands on the post-office scale, clerk gasps, parents proud', draw(lt, d, t, blit) {
-      const k = eo(clamp(lt / d)); counterScene(lt, t); scale.set(lerp(30, 48.5, eob(seg(lt, 0, 0.5))));
-      if (inMay.look.stamps !== 4) inMay.restyle({ stamps: 4 });
-      inMay.set({ mood: 'proud', armL: [20, 10], armR: [20, 10], blink: blink(t) });
-      inClerk.set({ mood: lt > 0.35 ? 'shock' : 'neutral', armL: [30, -20], armR: [40, -30], sweat: 1 });
-      inDad.set({ mood: 'proud', armR: [60, -60], blink: blink(t, 1) }); inMom.set({ mood: 'happy', armL: [40, -90] });
-      shoot(IN.scene, inPeople, V3(-0.4, 1.9, 1.6), V3(0.1, 1.85, 0.9), V3(2.7, 1.9, -2.2), null, k, LOOKS.room);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st + 0.35, 'boing', { gain: 0.6 }); }
+  // ── Problem 2 Emotion Engine Setup: Line-Level Emotion Arc ───────────────
+  // Set 1: Roy Night (Attempt 1: Panic & Revenge)
+  setEmotion(royNight, 'shocked', { at: cut(0), blendTime: 0.3, intensity: 0.95, beat: 'flinch' });
+  setEmotion(royNight, 'anxious', { at: cut(1), blendTime: 0.4, intensity: 0.75, beat: 'gasp' });
+  setEmotion(royNight, 'anxious', { at: cut(2), blendTime: 0.3, intensity: 0.90, beat: 'fist_clench' });
+  setEmotion(royNight, 'angry', { at: cut(3), blendTime: 0.35, intensity: 0.85, beat: 'fist_clench' });
+  setEmotion(royNight, 'shocked', { at: cut(4), blendTime: 0.2, intensity: 0.70, beat: 'flinch' });
 
-  // ── 3 · "to her grandma's house" (grandma waves from her porch) ──
-  { const st = cut(1);
-    add({ id: 'S03', at: st, note: "grandma's pink house, grandma waving on the porch", draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); mdDad.group.visible = mdMom.group.visible = mdMay.group.visible = mdCousin.group.visible = false; mdGma.group.visible = true;
-      mdGma.group.position.copy(gmaFront(0.9, 3.3)); mdGma.set({ mood: 'happy', armR: [150 + Math.sin(t * 9) * 18, 10] });
-      gma.door.rotation.y = 0;
-      const a = gmaFront(0.8, 3.0); shoot(MD.scene, mdPeople, gmaFront(1.4, 9.5).setY(1.8), gmaFront(1.0, 7.0).setY(1.6), a.clone().setY(2.0), a.clone().setY(1.5), k, LOOKS.field);
-      blit();
-    } });
-    cue(st, 'whoosh', { gain: 0.6 }); }
+  // Set 2: Roy Cafe (Attempt 2: Fake Closure & Heartbreak)
+  setEmotion(royCafe, 'smug', { at: cut(5), blendTime: 0.4, intensity: 0.80 });
+  setEmotion(royCafe, 'heartbroken', { at: cut(6), blendTime: 0.35, intensity: 0.95, beat: 'heartbreak_clench' });
+  setEmotion(royCafe, 'shocked', { at: cut(7), blendTime: 0.2, intensity: 0.70, beat: 'flinch' });
 
-  // ── 4 · "With the stamps stuck right on her coat" (close-up, stamps pop on) ──
-  { const st = cut(2), w0 = Wd('stamps', 2);
-    add({ id: 'S04', at: st, note: 'close-up of May: stamps pop onto her coat on "stamps"', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); counterScene(lt, t, { dad: false, mom: false });
-      const n = Math.min(6, 4 + Math.floor(clamp((t - w0) / 0.18) * 2 + (t > w0 ? 1 : 0))); if (inMay.look.stamps !== n) inMay.restyle({ stamps: n });
-      inMay.set({ mood: t > w0 + 0.4 ? 'smug' : 'happy', armL: [30, -20], armR: [20, 10], look: [0.4, 0], blink: blink(t) });
-      inClerk.set({ mood: 'shock', armL: [30, -20], armR: [40, -30] });
-      shoot(IN.scene, inPeople, V3(1.75, 2.1, -0.15), V3(1.95, 2.05, -0.55), V3(2.7, 2.0, -1.95), null, k, LOOKS.room, 1.5);
-      blit();
-    } });
-    cue(st, 'whoosh'); [0, 0.18, 0.36].forEach((o) => cue(w0 + o, 'pop', { gain: 0.8 })); }
+  // Set 3: Roy Day (Attempt 3: Healing, Boundaries & Self-Respect)
+  setEmotion(royDay, 'determined', { at: cut(8), blendTime: 0.5, intensity: 0.85, beat: 'shoulder_drop' });
+  setEmotion(royDay, 'sad', { at: cut(9), blendTime: 0.4, intensity: 0.75, beat: 'sigh' });
+  setEmotion(royDay, 'relieved', { at: cut(10), blendTime: 0.4, intensity: 0.80, beat: 'sigh' });
+  setEmotion(royDay, 'neutral', { at: cut(11), blendTime: 0.5, intensity: 0.70 });
+  setEmotion(royDay, 'determined', { at: cut(12), blendTime: 0.4, intensity: 0.85, beat: 'fist_clench' });
+  setEmotion(royDay, 'happy', { at: cut(13), blendTime: 0.4, intensity: 0.90, beat: 'laugh_bounce' });
+  setEmotion(royDay, 'determined', { at: cut(14), blendTime: 0.4, intensity: 0.95, beat: 'shoulder_drop' });
+  setEmotion(royDay, 'relieved', { at: cut(15), blendTime: 0.5, intensity: 0.90, beat: 'sigh' });
 
-  // ── 5 · "See, the post office had just started delivering packages," ──
-  { const st = cut(3), w0 = Wd('packages', 3);
-    add({ id: 'S05', at: st, note: 'post office front: the mailman carries parcels out, parcels pile up on "packages"', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); const z = PO.z;
-      stDad.group.visible = stMom.group.visible = stMay.group.visible = false; stMan.group.visible = true;
-      stMan.at(-5.2, 0.18, z - 0.6 - k * 2.4); stMan.set({ legs: 'walk', phase: t * 7, mood: 'happy', armL: [30, -100], armR: [30, -100], holdR: PROPS.parcels, v: 'parcels' });
-      piles.forEach((p, i) => { const a = clamp((t - w0 + 0.3 - i * 0.08) / 0.25); p.visible = a > 0; p.scale.setScalar(eob(a) || 0.001); });
-      shoot(ST.scene, streetPeople(), V3(-1.5, 2.6, z - 6.5), V3(-1.8, 1.8, z - 6.0), V3(-5.6, 3.4, z - 0.5), V3(-5.4, 1.2, z - 2.2), k, LOOKS.street);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(w0 - 0.25, 'plop'); cue(w0 - 0.1, 'plop'); cue(w0 + 0.05, 'plop'); cue(w0 + 0.2, 'plop'); }
+  // Secondary characters
+  setEmotion(exSilhouette, 'neutral', { at: 0 });
+  setEmotion(dave, 'happy', { at: cut(9), intensity: 0.7 });
+  setEmotion(sam, 'happy', { at: cut(9), intensity: 0.7 });
 
-  // ── 6 · "and May's parents wanted her to visit grandma," (the family at home) ──
-  const homeFront = (lt, t) => { mdDad.at(-0.8, 0, -1.0); mdMom.at(0.8, 0, -1.1); mdMay.at(0.05, 0, -0.7); mdGma.group.visible = mdCousin.group.visible = false; mdDad.group.visible = mdMom.group.visible = mdMay.group.visible = true; };
-  { const st = cut(4);
-    add({ id: 'S06', at: st, note: 'home: the family in the front yard, May hopeful, mom talking', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); homeFront(lt, t);
-      mdDad.set({ mood: 'happy', armL: [20, 10], blink: blink(t) }); mdMom.set({ mood: 'happy', talk: talk(t), armR: [70, -60], look: [-0.6, 0.3] });
-      mdMay.set({ mood: 'happy', armL: [140, 20], armR: [140, 20], legs: Math.sin(t * 8) > 0.3 ? 'jump' : 'stand', look: [0, -0.4] });
-      shoot(MD.scene, mdPeople, V3(-1.0, 1.7, 4.6), V3(-0.3, 1.5, 3.6), V3(0, 1.3, -1), null, k, { ...LOOKS.field, fov: 52 });
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st + 0.3, 'boing', { gain: 0.5 }); }
+  // ── Helper 2D HUD Drawers ───────────────────────────────────────────────
+  function drawSelfRespectHUD(attemptNum, pct, isWarm = false) {
+    ctx.save();
+    // Attempt Badge
+    ctx.fillStyle = isWarm ? '#059669' : '#DC2626';
+    ctx.beginPath();
+    ctx.roundRect(80, 110, 260, 68, 16);
+    ctx.fill();
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '900 32px Inter';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`ATTEMPT ${attemptNum}`, 210, 144);
 
-  // ── 7 · "seventy-three miles away." (the signpost, then fly toward the hills) ──
-  { const st = cut(5);
-    add({ id: 'S07', at: st, note: 'signpost LEWISTON 73 MI, camera rises past it toward the far hills', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); mdDad.group.visible = mdMom.group.visible = mdMay.group.visible = mdGma.group.visible = mdCousin.group.visible = false;
-      shoot(MD.scene, mdPeople, V3(3.4, 2.3, 5.2), V3(4.2, 4.6, 3.0), V3(6.2, 2.4, 2.4), V3(40, 3, -60), eio(k), LOOKS.field, 4);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st + 0.1, 'slide', { dur: 1.4, gain: 0.5 }); }
+    // Self Respect Bar Container
+    const barX = 640, barY = 110, barW = 360, barH = 68;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 16);
+    ctx.fill();
+    ctx.strokeStyle = isWarm ? '#10B981' : '#64748B';
+    ctx.lineWidth = 4;
+    ctx.stroke();
 
-  // ── 8 · "But a train ticket wasn't cheap." (dad sweats over the ticket price) ──
-  { const st = cut(6);
-    add({ id: 'S08', at: st, note: 'close-up dad: ticket "$$$", sweating; mom peeks with an empty purse', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); homeFront(lt, t); mdMay.group.visible = false; mdDad.at(-0.45, 0, -1.0); mdMom.at(0.6, 0, -1.4);
-      mdDad.set({ mood: 'worried', armR: [30, -90], holdR: PROPS.ticket, sweat: 1, look: [0.5, 0.6], v: 'tk' }); mdMom.set({ mood: 'worried', armL: [30, -90], holdL: PROPS.purse, look: [-0.8, 0.4], v: 'pu' });
-      shoot(MD.scene, mdPeople, V3(-0.2, 1.75, 2.6), V3(-0.1, 1.7, 1.8), V3(-0.05, 1.45, -1.1), null, k, LOOKS.field);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st + 0.4, 'zip', { gain: 0.5 }); }
+    // Fill
+    const fillW = Math.max(12, (barW - 16) * clamp(pct, 0, 1));
+    ctx.fillStyle = isWarm ? '#10B981' : pct > 0.3 ? '#F59E0B' : '#EF4444';
+    ctx.beginPath();
+    ctx.roundRect(barX + 8, barY + 8, fillW, barH - 16, 10);
+    ctx.fill();
 
-  // ── 9 · "So her dad walked her into the post office" ──
-  { const st = cut(7);
-    add({ id: 'S09', at: st, note: 'dad and May walk along the boardwalk to the post office, camera tracks', draw(lt, d, t, blit) {
-      const k = clamp(lt / d); const z = PO.z;
-      stMan.group.visible = false; stMom.group.visible = false; stDad.group.visible = stMay.group.visible = true; piles.forEach((p) => (p.visible = true, p.scale.setScalar(1)));
-      const zz = z - 7 + k * 4.2; stDad.at(-4.9, 0.18, zz); stMay.at(-4.3, 0.18, zz + 0.05);
-      stDad.set({ legs: 'walk', phase: t * 7, mood: 'proud', armR: [30, 0] }); stMay.set({ legs: 'walk', phase: t * 9 + 1, mood: 'happy', armL: [50, 0] });
-      shoot(ST.scene, streetPeople(), V3(-2.4, 1.6, zz - 3.8), V3(-2.6, 1.55, zz - 3.0), V3(-4.6, 1.25, zz), null, eio(k), LOOKS.street);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(Wd('post', 7), 'ding', { gain: 0.6 }); }
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '800 24px Inter';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`SELF-RESPECT: ${Math.round(pct * 100)}%`, barX + barW / 2, barY + 34);
+    ctx.restore();
+  }
 
-  // ── 10 · "and asked how much it costs to mail a kid." ──
-  { const st = cut(8), wk = Wd('kid', 8);
-    add({ id: 'S10', at: st, note: 'dad asks at the counter; on "kid" the clerk freezes and we punch in', draw(lt, d, t, blit) {
-      counterScene(lt, t, { mom: false }); inMay.at(1.05, 0, -1.6); scale.set(0);
-      inDad.set({ mood: 'happy', talk: talk(t, t < wk + 0.25), armL: [60, -70], blink: blink(t) }); inMay.set({ mood: 'happy', look: [0.6, -0.5], blink: blink(t, 1) });
-      inClerk.set({ mood: t > wk ? 'shock' : 'neutral', armL: [20, 10], armR: [20, 10], look: [-0.6, 0] });
-      const punch = eo(clamp((t - wk) / 0.25));
-      shoot(IN.scene, inPeople, mix(V3(-0.6, 1.7, 1.6), V3(-0.3, 1.7, 1.2), eio(clamp(lt / d))), mix(V3(-0.3, 1.7, 1.2), V3(2.3, 1.65, -0.9), punch), V3(2.3, 1.7, -2.3), V3(3.55, 1.5, -2.5), punch, LOOKS.room);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(wk, 'boing'); }
+  function drawRewindOverlay(lt, d) {
+    ctx.save();
+    // VHS glitch scanlines
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.18)';
+    ctx.fillRect(0, 0, W, H);
 
-  // ── 11 · "The clerk checked the rules," ──
-  { const st = cut(9);
-    add({ id: 'S11', at: st, note: 'clerk flips through the big RULES book, sweating', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); counterScene(lt, t, { dad: false, mom: false, may: false });
-      inClerk.set({ mood: 'worried', armL: [60, -40], armR: [100, -30], holdR: PROPS.book('RULES', 1), look: [0, 0.8], v: 'open' + (Math.floor(t * 4) % 2), sweat: 1, lean: Math.sin(t * 4) * 2 });
-      shoot(IN.scene, inPeople, V3(1.9, 1.75, -0.4), V3(2.2, 1.7, -0.9), V3(3.5, 1.4, -2.5), null, k, LOOKS.room);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st + 0.2, 'slide', { dur: 0.4, gain: 0.5 }); cue(st + 0.8, 'slide', { dur: 0.4, gain: 0.5 }); }
-
-  // ── 12 · "and nothing said he couldn't." ──
-  { const st = cut(10);
-    add({ id: 'S12', at: st, note: 'clerk slams the book shut and shrugs; dad grins', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); counterScene(lt, t, { mom: false, may: false });
-      const shrug = eob(seg(lt, 0.25, 0.6));
-      inClerk.set({ mood: lt > 0.4 ? 'happy' : 'neutral', armL: [lerp(40, 75, shrug), lerp(-80, -60, shrug)], armR: [lerp(40, 75, shrug), lerp(-80, -60, shrug)], holdR: lt < 0.3 ? PROPS.book('RULES', 0) : null, armL0: 0, v: 'shut', bob: -shrug * 10 });
-      inDad.set({ mood: 'proud', armR: [40, -40] });
-      shoot(IN.scene, inPeople, V3(0.6, 1.8, 0.7), V3(1.0, 1.75, 0.2), V3(3.3, 1.55, -2.5), null, k, LOOKS.room);
-      blit();
-    } });
-    cue(st + 0.2, 'thud'); cue(st + 0.5, 'boing', { gain: 0.5 }); }
-
-  // ── 13 · "May weighed forty-eight and a half pounds," (needle swings) ──
-  const W485 = Wd('pounds', 11);
-  { const st = cut(11);
-    add({ id: 'S13', at: st, note: 'May climbs on the scale, the needle swings up to 48.5', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); counterScene(lt, t, { dad: false, mom: false });
-      const a = clamp((t - st - 0.2) / (W485 - st - 0.2)); scale.set(48.5 * eob(a) + Math.sin(t * 20) * (1 - a) * 2);
-      inMay.set({ mood: a < 1 ? 'happy' : 'proud', armL: [30, 10], armR: [30, 10], legs: lt < 0.25 ? 'jump' : 'stand', blink: blink(t) });
-      inClerk.set({ mood: 'neutral', armL: [20, 10], armR: [40, -60], look: [-0.6, 0.6] });
-      shoot(IN.scene, inPeople, V3(1.3, 1.9, 0.6), V3(1.65, 1.85, 0.0), V3(2.7, 1.75, -2.1), null, k, LOOKS.room);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st + 0.2, 'slide', { dur: 0.9, gain: 0.6 }); cue(W485, 'tock'); }
-
-  // ── 14 · "just under the fifty pound limit." (dial close-up) ──
-  { const st = cut(12), wu = Wd('under', 12);
-    add({ id: 'S14', at: st, note: 'dial close-up: needle trembles just under the red 50 LIMIT zone', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); counterScene(lt, t, { dad: false, mom: false });
-      scale.set(48.5 + Math.sin(t * 30) * 0.35);
-      inMay.set({ mood: 'smug' });
-      const dial = V3(2.7, 2.8, -2.28);
-      shoot(IN.scene, inPeople, V3(2.55, 2.9, -1.1), V3(2.68, 2.84, -1.55), dial, null, k, { ...LOOKS.room, aperture: 0.002 }, 0.85);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(wu, 'ding', { gain: 0.8 }); }
-
-  // ── 15 · "So on went fifty-three cents in stamps," ──
-  { const st = cut(13);
-    add({ id: 'S15', at: st, note: 'clerk slaps stamp after stamp on her coat (4 → 10)', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); counterScene(lt, t, { dad: false, mom: false });
-      const n = Math.min(10, 4 + Math.floor(lt / 0.32)); if (inMay.look.stamps !== n) inMay.restyle({ stamps: n });
-      const hit = (lt % 0.32) / 0.32;
-      inClerk.set({ mood: 'happy', armR: [lerp(150, 95, eo(hit)), -20], holdR: PROPS.stamp, armL: [30, -30], v: 'st' });
-      inMay.set({ mood: 'laugh', armL: [30, -10], armR: [30, -10], bob: (1 - hit) * 6 });
-      shoot(IN.scene, inPeople, V3(0.9, 1.95, 0.7), V3(1.2, 1.95, 0.2), V3(3.0, 1.85, -2.2), null, k, LOOKS.room);
-      blit();
-    } });
-    for (let i = 1; i <= 6; i++) cue(cut(13) + i * 0.32 - 0.02, 'stamp', { gain: 0.8 }); }
-
-  // ── 16 · "and she rode the train in the mail car," ──
-  { const st = cut(14);
-    add({ id: 'S16', at: st, note: 'wide: steam train with the U.S. MAIL car rolls across the meadow', draw(lt, d, t, blit) {
-      const k = clamp(lt / d); const x = -10 + lt * 5.5; tr.position.x = x; tr.update(t);
-      shoot(TR.scene, [], V3(x + 8, 1.4, -3.5), V3(x + 5.5, 2.6, -4.5), V3(x + 0.5, 2.0, -12), V3(x - 1.5, 2.0, -12), k, { ...LOOKS.field, aperture: 0.0005, fov: 48 }, 11);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st + 0.05, 'chug', { dur: L(15) - st, gain: 0.9 }); }
-
-  // ── 17 · "with her mom's cousin, who happened to be the mail clerk." ──
-  { const st = cut(15), wc = Wd('cousin', 15);
-    add({ id: 'S17', at: st, note: 'inside the mail car: May sits on a mail sack, the cousin sorts letters, tips his cap', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); MC.window.material.map.offset.x = (t * 0.25) % 1;
-      mcMay.at(-0.55, 0, -3.15); mcCousin.at(0.12, 0, -3.95);
-      mcMay.set({ mood: 'happy', legs: 'sit', armL: [40, -30], armR: [40, -30], look: [0.6, 0], blink: blink(t), bob: Math.abs(Math.sin(t * 9)) * 4 });
-      const tip = clamp((t - wc) / 0.3) * (1 - clamp((t - wc - 1.4) / 0.3));
-      mcCousin.set({ mood: tip > 0.2 ? 'proud' : 'neutral', armL: [lerp(30, 150, eo(tip)), lerp(-60, 10, tip)], armR: [40, -80], holdR: PROPS.letters, look: [-0.6, 0], v: 'l' });
-      shoot(MC.scene, [mcMay, mcCousin], V3(-0.3, 1.35, -0.7), V3(-0.2, 1.25, -1.1), V3(-0.2, 1.0, -3.6), null, k, { ...LOOKS.room, fov: 54 });
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st, 'chug', { dur: L(16) - st, gain: 0.5 }); cue(wc + 0.1, 'pop', { gain: 0.6 }); }
-
-  // ── 18 · "He walked her right up to grandma's front door." ──
-  { const st = cut(16), wd = Wd('door', 16);
-    add({ id: 'S18', at: st, note: "cousin walks May up grandma's path; the door opens on 'door'; grandma beams", draw(lt, d, t, blit) {
-      const k = clamp(lt / d); mdDad.group.visible = mdMom.group.visible = false; [mdMay, mdCousin, mdGma].forEach((p) => (p.group.visible = true));
-      const walk = eio(clamp(lt / (wd - st)));
-      mdCousin.group.position.copy(gmaFront(1.25, lerp(7.5, 3.6, walk))).setY(walk > 0.85 ? 0.25 : 0); mdMay.group.position.copy(gmaFront(0.5, lerp(7.2, 3.3, walk))).setY(walk > 0.85 ? 0.25 : 0);
-      mdCousin.set({ legs: walk < 1 ? 'walk' : 'stand', phase: t * 7, mood: 'happy', armL: [40, 0] });
-      if (mdMay.look.stamps !== 10) mdMay.restyle({ stamps: 10 });
-      mdMay.set({ legs: walk < 1 ? 'walk' : 'stand', phase: t * 9, mood: 'happy', armR: [lerp(40, 150, clamp((t - wd) / 0.3)), 10] });
-      const open = eo(clamp((t - wd + 0.15) / 0.35)); gma.door.rotation.y = -open * 1.6;
-      mdGma.group.visible = open > 0.15; mdGma.group.position.copy(gmaFront(-0.05, 2.3)); mdGma.set({ mood: open > 0.6 ? 'laugh' : 'shock', armL: [lerp(10, 120, open), 0], armR: [lerp(10, 120, open), 0] });
-      const a = gmaFront(0.2, 3.2);
-      shoot(MD.scene, mdPeople, gmaFront(0.4, 10.5).setY(1.8), gmaFront(0.3, 8.2).setY(1.6), gmaFront(0.3, 3.2).setY(1.3), null, eio(k), LOOKS.field);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(wd, 'ding'); cue(wd + 0.4, 'sparkle', { gain: 0.6 }); }
-
-  // ── 19 · "Soon after, the post office banned mailing people." ──
-  { const st = cut(17), wb = Wd('banned', 17);
-    add({ id: 'S19', at: st, note: 'Postmaster General slams his stamp on "banned"; NOTICE: NO PEOPLE pops on the wall', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); const hit = clamp((t - wb + 0.2) / 0.2);
-      ofBoss.set({ mood: t > wb ? 'angry' : 'neutral', armR: [lerp(40, 140, eo(seg(lt, 0, wb - st - 0.2))) - hit * 110, -20], holdR: PROPS.rubberStamp, armL: [20, 10], v: 'rs' });
-            notice.visible = false;
-      shoot(OF.scene, [ofBoss], V3(0.6, 1.7, 0.4), V3(0.5, 1.65, -0.5), V3(0.4, 1.45, -4), null, k, LOOKS.room);
-      blit();
-      const pop = clamp((t - wb) / 0.22);
-      if (pop > 0) {      // the NOTICE slaps onto the screen
-        ctx.save(); ctx.translate(540, 560); ctx.rotate(lerp(-0.4, -0.06, eo(pop))); const sc = lerp(1.8, 1, eo(pop)); ctx.scale(sc, sc);
-        ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-250, -290, 520, 600); ctx.fillStyle = '#F4EBD6'; ctx.fillRect(-270, -310, 520, 600); ctx.strokeStyle = '#1F1C33'; ctx.lineWidth = 8; ctx.strokeRect(-250, -290, 480, 560);
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#1F1C33'; ctx.font = '900 92px Inter'; ctx.fillText('NOTICE', -10, -200); ctx.fillStyle = '#B5372E'; ctx.fillRect(-170, -135, 320, 10);
-        ctx.font = '900 70px Inter'; ctx.fillText('NO PEOPLE', -10, -40); ctx.fillStyle = '#1F1C33'; ctx.font = '800 50px Inter'; ctx.fillText('MAY BE SENT', -10, 50); ctx.fillText('BY MAIL', -10, 115); ctx.font = '800 30px Inter'; ctx.fillText('POSTMASTER GENERAL', -10, 215);
-        ctx.restore();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 3;
+    for (let y = 0; y < H; y += 14) {
+      if ((y + Math.floor(lt * 120)) % 28 === 0) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
       }
-    } });
-    cue(st, 'whoosh'); cue(wb, 'stamp', { gain: 1 }); cue(wb + 0.05, 'slam', { gain: 0.6 }); }
+    }
 
-  // ── 20 · "Which is why today, you can still mail baby chicks," ──
-  { const st = cut(18), wc = Wd('chicks', 18);
-    add({ id: 'S20', at: st, note: 'a crate of peeping chicks on the counter, the clerk happily stamps it', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / d)); counterScene(lt, t, { dad: false, mom: false, may: false }); chicks.visible = true; chicks.update(t); scale.visible = false;
-      chicks.chicks.forEach((c) => c.lookAt(mix(V3(0.9, 2.1, -0.2), V3(1.3, 1.95, -1.0), k)));
-      inClerk.at(3.55, 0, -3.3); inClerk.set({ mood: 'happy', armR: [60, -60], armL: [30, -30], holdR: PROPS.stamp, v: 'c' });
-      shoot(IN.scene, inPeople, V3(0.9, 2.1, -0.2), V3(1.3, 1.95, -1.0), V3(3.0, 1.6, -3.5), null, k, LOOKS.room);
-      blit();
-    } });
-    cue(st, 'whoosh'); cue(st + 0.2, 'chirp', { dur: 2.6 }); cue(wc, 'stamp', { gain: 0.7 }); }
+    // Huge REWIND Banner
+    const blinkOn = Math.sin(lt * 24) > 0;
+    if (blinkOn) {
+      ctx.fillStyle = '#DC2626';
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - 280, H / 2 - 90, 560, 180, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 8;
+      ctx.stroke();
 
-  // ── 21 · "but not your little sister." (sister in a parcel box, RETURN TO SENDER) ──
-  { const st = cut(19), wsis = Wd('sister', 19);
-    add({ id: 'S21', at: st, note: 'little sister stands in a stamped parcel box, smug; RETURN TO SENDER stamp slams down', draw(lt, d, t, blit) {
-      const k = eio(clamp(lt / Math.min(d, 2.2))); counterScene(lt, t, { dad: false, mom: false, may: false }); chicks.visible = false; scale.visible = true;
-      inClerk.at(3.55, 0, -2.5); box.visible = true; inSis.group.visible = true; inSis.at(1.2, 0.02, -1.95);
-      inSis.set({ mood: t > wsis + 0.3 ? 'sad' : 'smug', armL: [150, 20], armR: [20, 10], blink: blink(t) });
-      inClerk.set({ mood: 'angry', armL: [70, -70], armR: [70, -70], look: [-0.8, 0.6] });
-      shoot(IN.scene, inPeople, V3(0.0, 1.55, 1.3), V3(0.35, 1.45, 0.7), V3(1.5, 1.05, -2.0), null, k, LOOKS.room);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 76px Inter';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('◀◀ REWIND', W / 2, H / 2 - 10);
+
+      ctx.font = '700 30px Inter';
+      ctx.fillText('TRYING AGAIN...', W / 2, H / 2 + 45);
+    }
+
+    // Spinning backward clock HUD
+    const clockAngle = -lt * 18;
+    ctx.translate(W / 2, 380);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(0, 0, 75, 0, TAU);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.sin(clockAngle) * 45, -Math.cos(clockAngle) * 45);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.sin(clockAngle * 12) * 60, -Math.cos(clockAngle * 12) * 60);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ── Shot 0 (Line 0: "Six years. Then you find the messages.") ───────────
+  // SHOT SIZE: WIDE (Establishing Roy in dark bedroom, phone glow)
+  cue(Wd('six', 0), 'shatter');
+  cue(Wd('messages', 0), 'alarm');
+  add({
+    id: 'shot0_hook',
+    shotType: 'WIDE',
+    character: royNight,
+    hasArmAction: true,
+    at: cut(0),
+    note: 'WIDE establishing night desk, phone lights up, 6 YEARS shatters',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royNight, t, {
+        armL: [25, 20],
+        armR: [45, 60], // Hand 1: holding phone
+        holdR: PROPS.phone(true),
+        talk: rhubarbTalk(t),
+        look: [0, -0.4],
+      });
+
+      // Auto-fit WIDE framing with subtle camera track & impact shake
+      const f0 = autoFrame('WIDE', royNight, { azimuthDeg: -8, targetYOffset: -0.1 });
+      const f1 = autoFrame('WIDE', royNight, { azimuthDeg: 0, targetYOffset: 0.05 });
+      const shake = lt < 1.1 ? Math.sin(lt * 40) * Math.exp(-lt * 4) * 0.1 : 0;
+      f0.camPos.x += shake;
+
+      const mood = shootMood(BEDROOM.scene, [royNight], f0, f1, eo(k), t, { bloom: 0.35 });
       blit();
-      const sp = clamp((t - wsis - 0.15) / 0.18);
-      if (sp > 0) {
-        ctx.save(); ctx.translate(540, 640); ctx.rotate(-0.16); const s = lerp(2.6, 1.25, eo(sp)); ctx.scale(s, s); ctx.globalAlpha = Math.min(1, sp * 1.5);
-        ctx.strokeStyle = '#C8283A'; ctx.lineWidth = 14; ctx.beginPath(); ctx.roundRect(-330, -95, 660, 190, 22); ctx.stroke();
-        ctx.fillStyle = '#C8283A'; ctx.font = '900 92px Inter'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('RETURN TO', 0, -36); ctx.fillText('SENDER', 0, 50);
-        ctx.restore();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      // Glass shatter effect overlay: "6 YEARS" explodes into shards
+      ctx.save();
+      const shatterProgress = seg(lt, 0.35, 1.8);
+      const shardCount = 18;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 120px Inter';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      if (shatterProgress < 0.05) {
+        ctx.lineWidth = 16;
+        ctx.strokeStyle = '#0F172A';
+        ctx.strokeText('6 YEARS', W / 2, 600);
+        ctx.fillText('6 YEARS', W / 2, 600);
+      } else if (shatterProgress < 1.0) {
+        for (let i = 0; i < shardCount; i++) {
+          const ang = (i / shardCount) * TAU;
+          const dist = eo(shatterProgress) * 550;
+          const sx = W / 2 + Math.cos(ang) * dist;
+          const sy = 600 + Math.sin(ang) * dist + shatterProgress * shatterProgress * 350;
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(shatterProgress * (i % 2 === 0 ? 6 : -6));
+          ctx.fillStyle = 'rgba(255, 255, 255, ' + (1 - shatterProgress * 0.8) + ')';
+          ctx.strokeStyle = '#0F172A';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(-45, -30);
+          ctx.lineTo(50, -15);
+          ctx.lineTo(15, 55);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
       }
-    } });
-    cue(st, 'whoosh'); cue(wsis + 0.15, 'stamp', { gain: 1 }); cue(wsis + 0.17, 'slam', { gain: 0.7 }); }
+      ctx.restore();
+    }
+  });
 
-  return { shots: S, cues: CUES };
+  // ── Shot 1 (Line 1: "You're Roy. And you are about to make a choice.") ───
+  // SHOT SIZE: MEDIUM (Default head-to-toe full body, choice HUD branches A and B)
+  cue(Wd('roy', 1), 'whoosh');
+  cue(Wd('choice', 1), 'pop');
+  add({
+    id: 'shot1_choice',
+    shotType: 'MEDIUM',
+    character: royNight,
+    hasArmAction: true,
+    at: cut(1),
+    note: 'MEDIUM full body, choice HUD branches A and B',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royNight, t, {
+        armL: [55, 35], // Hand 2: gesturing outward at viewer
+        armR: [25, 20],
+        holdR: PROPS.phone(true),
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royNight, { azimuthDeg: 6, hasWideArms: true });
+      const f1 = autoFrame('MEDIUM', royNight, { azimuthDeg: -4, hasWideArms: true });
+
+      const mood = shootMood(BEDROOM.scene, [royNight], f0, f1, eio(k), t, { bloom: 0.25 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      ctx.save();
+      const popK = eob(seg(lt, 0.8, 1.6));
+      ctx.translate(W / 2, 420);
+      ctx.scale(popK, popK);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.beginPath();
+      ctx.roundRect(-420, -100, 840, 200, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#38BDF8';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = '#EF4444';
+      ctx.font = '900 36px Inter';
+      ctx.textAlign = 'left';
+      ctx.fillText('[A] PANIC & REVENGE', -370, -30);
+      ctx.fillStyle = '#10B981';
+      ctx.fillText('[B] SELF-RESPECT', -370, 35);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 2a (Line 2: "Attempt one. You text her forty-seven times...") ─────
+  // SHOT SIZE: MEDIUM (Full body panic flail, cascading 47 missed calls)
+  cue(Wd('one', 2), 'thud');
+  cue(Wd('forty-seven', 2), 'chug');
+  add({
+    id: 'shot2a_attempt1',
+    shotType: 'MEDIUM',
+    character: royNight,
+    hasArmAction: true,
+    at: cut(2),
+    note: 'MEDIUM full body: 47 texts cascade, panic flail',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      const flailL = 120 + Math.sin(t * 16) * 35;
+      const flailR = 120 - Math.sin(t * 16) * 35;
+      applyEmotion(royNight, t, {
+        armL: [flailL, 25], // Hand 3: panic arm flailing
+        armR: [flailR, 25],
+        holdR: PROPS.phone(true),
+        talk: rhubarbTalk(t),
+        sweat: 1,
+      });
+
+      const f0 = autoFrame('MEDIUM', royNight, { azimuthDeg: -8, hasWideArms: true });
+      const f1 = autoFrame('MEDIUM', royNight, { azimuthDeg: 4, hasWideArms: true });
+
+      const mood = shootMood(BEDROOM.scene, [royNight], f0, f1, eo(k), t, { bloom: 0.28 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      const respectPct = lerp(0.40, 0.22, seg(lt, 0, d));
+      drawSelfRespectHUD(1, respectPct, false);
+
+      ctx.save();
+      const msgs = ['47 MISSED CALLS', 'PLEASE ANSWER', 'WHY???', 'WHO WAS HE?'];
+      msgs.forEach((txt, idx) => {
+        const bubbleY = 820 - idx * 95 + Math.sin(t * 8 + idx) * 12;
+        const bubbleX = 260 + (idx % 2 === 0 ? 50 : -50);
+        ctx.fillStyle = '#EF4444';
+        ctx.beginPath();
+        ctx.roundRect(bubbleX - 190, bubbleY - 35, 380, 70, 20);
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '900 28px Inter';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(txt, bubbleX, bubbleY);
+      });
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 2b (Line 2 sub-cut: "...at two a.m.") ──────────────────────────
+  // SHOT SIZE: CLOSE (Max 1.5s emotional peak on 2:00 AM clock, 1.27s duration!)
+  cue(Wd('two', 2), 'alarm');
+  add({
+    id: 'shot2b_late_night',
+    shotType: 'CLOSE',
+    character: royNight,
+    hasArmAction: false,
+    at: Wd('two', 2),
+    note: 'CLOSE emotional peak: 2:00 AM clock, extreme spiral (1.27s <= 1.5s)',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royNight, t, {
+        armL: [70, 30],
+        armR: [70, 30],
+        talk: rhubarbTalk(t),
+        sweat: 1,
+      });
+
+      const f0 = autoFrame('CLOSE', royNight, { pitchDeg: 2 });
+      const f1 = autoFrame('CLOSE', royNight, { pitchDeg: 0, distanceMultiplier: 0.95 });
+
+      const mood = shootMood(BEDROOM.scene, [royNight], f0, f1, eo(k), t, { bloom: 0.32 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(1, 0.15, false);
+
+      ctx.save();
+      ctx.fillStyle = '#EF4444';
+      ctx.font = '900 72px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('2:00 AM', W / 2, 540);
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 5;
+      ctx.strokeText('2:00 AM', W / 2, 540);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 3a (Line 3: "You post a savage story.") ────────────────────────
+  // SHOT SIZE: MEDIUM (Rule: returns to MEDIUM after CLOSE! Full body posting story)
+  cue(Wd('savage', 3), 'slam');
+  add({
+    id: 'shot3a_savage_post',
+    shotType: 'MEDIUM',
+    character: royNight,
+    hasArmAction: true,
+    at: cut(3),
+    note: 'MEDIUM full body: Savage story posted, social view explosion',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royNight, t, {
+        armL: [30, 30],
+        armR: [50, 60],
+        holdR: PROPS.phone(true),
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royNight, { azimuthDeg: -6 });
+      const f1 = autoFrame('MEDIUM', royNight, { azimuthDeg: 2 });
+
+      const mood = shootMood(BEDROOM.scene, [royNight], f0, f1, eo(k), t, { bloom: 0.3 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(1, 0.08, false);
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.95)';
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - 260, 480, 520, 120, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 44px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('SAVAGE STORY POSTED', W / 2, 545);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 3b (Line 3 sub-cut: "Everyone sees it. Everyone.") ──────────────
+  // SHOT SIZE: MEDIUM (Full body phone throw arc, arms flinging forward)
+  cue(Wd('everyone', 3), 'whoosh');
+  add({
+    id: 'shot3b_phone_throw',
+    shotType: 'MEDIUM',
+    character: royNight,
+    hasArmAction: true,
+    at: Wd('everyone', 3),
+    note: 'MEDIUM full body: Roy throws phone in regret, everyone saw it',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      const throwPhase = seg(lt, 0.2, 1.0);
+      const armR_angle = lerp(135, 35, eo(throwPhase));
+      applyEmotion(royNight, t, {
+        armL: [45, 40],
+        armR: [armR_angle, 80], // Hand 4: phone throw gesture
+        holdR: throwPhase < 0.6 ? PROPS.phone(true) : null,
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royNight, { azimuthDeg: 4, hasWideArms: true });
+      const f1 = autoFrame('MEDIUM', royNight, { azimuthDeg: -3, hasWideArms: true });
+
+      const mood = shootMood(BEDROOM.scene, [royNight], f0, f1, eo(k), t, { bloom: 0.3 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(1, 0.03, false);
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.95)';
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - 260, 480, 520, 120, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 48px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('EVERYONE SAW IT', W / 2, 550);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 4 (Line 4: "Rewind.") ───────────────────────────────────────────
+  // SHOT SIZE: WIDE (Establishing reverse motion & room warp)
+  cue(L(4), 'rewind');
+  add({
+    id: 'shot4_rewind1',
+    shotType: 'WIDE',
+    character: royNight,
+    hasArmAction: true,
+    at: cut(4),
+    note: 'WIDE reverse camera motion, backward clock, VHS scanlines',
+    draw(lt, d, t, blit) {
+      const k = 1 - (lt / d); // Reversed motion!
+      applyEmotion(royNight, t, {
+        armL: [90, 45],
+        armR: [90, 45],
+        talk: 0.5,
+      });
+
+      const f0 = autoFrame('WIDE', royNight, { distanceMultiplier: 1.15 });
+      const f1 = autoFrame('WIDE', royNight, { distanceMultiplier: 0.85 });
+
+      const mood = shootMood(BEDROOM.scene, [royNight], f0, f1, k, t, { bloom: 0.4 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawRewindOverlay(lt, d);
+    }
+  });
+
+  // ── Shot 5 (Line 5: "Attempt two. You act fine. You even meet her for closure.")
+  // SHOT SIZE: WIDE (Establishing cafe street scene with ex silhouette sitting across)
+  cue(Wd('two', 5), 'thud');
+  cue(Wd('closure', 5), 'pop');
+  add({
+    id: 'shot5_attempt2_cafe',
+    shotType: 'WIDE',
+    character: royCafe,
+    hasArmAction: true,
+    at: cut(5),
+    note: 'WIDE establishing cafe meeting, forced smile, nervous cup',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royCafe, t, {
+        legs: 'sit',
+        armL: [25, 40],
+        armR: [45, 60], // Hand 5: fidgeting with cup
+        holdR: PROPS.cup,
+        talk: rhubarbTalk(t),
+        sweat: 0.6,
+      });
+      applyEmotion(exSilhouette, t, {
+        legs: 'sit',
+        armL: [15, 20],
+        armR: [15, 20],
+      });
+
+      // Frame Roy and Ex in cafe scene
+      const f0 = autoFrame('WIDE', royCafe, { azimuthDeg: 8, extraPeople: [exSilhouette] });
+      const f1 = autoFrame('WIDE', royCafe, { azimuthDeg: -6, extraPeople: [exSilhouette] });
+
+      const mood = shootMood(CAFE.scene, [royCafe, exSilhouette], f0, f1, eo(k), t, { bloom: 0.22 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(2, 0.15, false);
+
+      ctx.save();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.roundRect(160, 480, 400, 90, 20);
+      ctx.fill();
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = INK;
+      ctx.font = '900 32px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('"I\'M TOTALLY FINE"', 360, 538);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 6a (Line 6: "But closure from the person who hurt you?") ─────────
+  // SHOT SIZE: MEDIUM (Full body head-to-toe, facepalm, ex walks away)
+  cue(Wd('closure', 6), 'plop');
+  add({
+    id: 'shot6a_closure_fail',
+    shotType: 'MEDIUM',
+    character: royCafe,
+    hasArmAction: true,
+    at: cut(6),
+    note: 'MEDIUM full body: Closure question, ex silhouette turns away, facepalm',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royCafe, t, {
+        legs: 'stand',
+        armL: [30, 20],
+        armR: [145, -75], // Hand 6: facepalm touching forehead
+        talk: rhubarbTalk(t),
+      });
+      applyEmotion(exSilhouette, t, {
+        legs: 'walk',
+        phase: t * 2,
+        flip: true,
+      });
+
+      const f0 = autoFrame('MEDIUM', royCafe, { azimuthDeg: 5, targetYOffset: 0.05 });
+      const f1 = autoFrame('MEDIUM', royCafe, { azimuthDeg: -3, targetYOffset: -0.05 });
+
+      const mood = shootMood(CAFE.scene, [royCafe, exSilhouette], f0, f1, eo(k), t, { bloom: 0.26 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(2, 0.08, false);
+
+      ctx.save();
+      ctx.fillStyle = '#EF4444';
+      ctx.font = '900 36px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('"CAN WE GET CLOSURE?"', W / 2, 480);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 6b (Line 6 sub-cut: "That's just the wound, reopened.") ──────────
+  // SHOT SIZE: CLOSE (Emotional climax on reopened wound heart crack, 1.30s <= 1.5s!)
+  cue(Wd('wound', 6), 'slam');
+  add({
+    id: 'shot6b_wound_reopened',
+    shotType: 'CLOSE',
+    character: royCafe,
+    hasArmAction: false,
+    at: Wd('wound', 6),
+    note: 'CLOSE emotional peak: heart crack, defeated shrug (1.30s <= 1.5s)',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royCafe, t, {
+        legs: 'stand',
+        armL: [65, 50],
+        armR: [65, 50],
+        talk: rhubarbTalk(t),
+        tears: 1.0,
+      });
+
+      const f0 = autoFrame('CLOSE', royCafe, { pitchDeg: 1 });
+      const f1 = autoFrame('CLOSE', royCafe, { pitchDeg: 0, distanceMultiplier: 0.95 });
+
+      const mood = shootMood(CAFE.scene, [royCafe], f0, f1, eo(k), t, { bloom: 0.28 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(2, 0.0, false);
+
+      ctx.save();
+      ctx.translate(W / 2, 540);
+      const pulse = 1 + Math.sin(t * 8) * 0.08;
+      ctx.scale(pulse, pulse);
+
+      ctx.fillStyle = '#EF4444';
+      ctx.beginPath();
+      ctx.moveTo(0, 30);
+      ctx.bezierCurveTo(-80, -60, -120, 20, 0, 110);
+      ctx.bezierCurveTo(120, 20, 80, -60, 0, 30);
+      ctx.fill();
+
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(0, -30);
+      ctx.lineTo(-15, 10);
+      ctx.lineTo(20, 40);
+      ctx.lineTo(-10, 70);
+      ctx.lineTo(0, 105);
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 36px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('WOUND REOPENED', 0, 175);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 7 (Line 7: "Rewind.") ───────────────────────────────────────────
+  // SHOT SIZE: WIDE (Rule: returns to WIDE after CLOSE! Full reverse speed ramp)
+  cue(L(7), 'rewind');
+  add({
+    id: 'shot7_rewind2',
+    shotType: 'WIDE',
+    character: royCafe,
+    hasArmAction: true,
+    at: cut(7),
+    note: 'WIDE reverse camera speed ramp, backward clock',
+    draw(lt, d, t, blit) {
+      const k = 1 - (lt / d);
+      applyEmotion(royCafe, t, { armL: [90, 45], armR: [90, 45], talk: 0.4 });
+      const f0 = autoFrame('WIDE', royCafe, { distanceMultiplier: 1.1 });
+      const f1 = autoFrame('WIDE', royCafe, { distanceMultiplier: 0.8 });
+
+      const mood = shootMood(CAFE.scene, [royCafe], f0, f1, k, t, { bloom: 0.4 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+      drawRewindOverlay(lt, d);
+    }
+  });
+
+  // ── Shot 8 (Line 8: "Attempt three. You put the phone down. That's step one.")
+  // SHOT SIZE: MEDIUM (Rule: returns to MEDIUM! Roy lowers phone down on table, warm golden grade)
+  cue(Wd('three', 8), 'thud');
+  cue(Wd('down', 8), 'tock');
+  cue(Wd('one', 8), 'ding');
+  add({
+    id: 'shot8_attempt3_step1',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: cut(8),
+    note: 'MEDIUM full body: Roy places phone down on table, warm golden grade',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      const isPlacing = lt < 1.6;
+      applyEmotion(royDay, t, {
+        armL: [20, 15],
+        armR: isPlacing ? [45, 60] : [25, 20], // Hand 8: placing phone face-down
+        holdR: isPlacing ? PROPS.phone(false) : null,
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: -5 });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: 3 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.25 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      const respectPct = lerp(0.20, 0.50, seg(lt, 0.5, 2.5));
+      drawSelfRespectHUD(3, respectPct, true);
+
+      ctx.save();
+      const popK = eob(seg(lt, 0.8, 1.8));
+      ctx.translate(W / 2, 520);
+      ctx.scale(popK, popK);
+      ctx.fillStyle = '#059669';
+      ctx.beginPath();
+      ctx.roundRect(-340, -60, 680, 120, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 42px Inter';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('STEP 1: PUT THE PHONE DOWN', 0, 0);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 9a (Line 9: "Tell two real people the truth.") ──────────────────
+  // SHOT SIZE: MEDIUM (Full body with Dave and Sam, open dialogue)
+  cue(Wd('truth', 9), 'pop');
+  add({
+    id: 'shot9a_two_friends',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: cut(9),
+    note: 'MEDIUM full body: Talking to two friends, open arms',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [45, 25], // Hand 9: open arms talking honestly
+        armR: [45, 25],
+        talk: rhubarbTalk(t),
+      });
+      applyEmotion(dave, t, { armL: [20, 10], armR: [35, 45], talk: 0 });
+      applyEmotion(sam, t, { armL: [35, 45], armR: [20, 10], talk: 0 });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: -8, hasWideArms: true, extraPeople: [dave, sam] });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: 6, hasWideArms: true, extraPeople: [dave, sam] });
+
+      const mood = shootMood(MEADOW.scene, [royDay, dave, sam], f0, f1, eio(k), t, { bloom: 0.24 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.60, true);
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - 280, 480, 560, 90, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#10B981';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 32px Inter';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('TELL TWO REAL PEOPLE', W / 2, 525);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 9b (Line 9 sub-cut: "Secrets make heartbreak heavier.") ──────────
+  // SHOT SIZE: MEDIUM (Full body supportive nod, burden lifted)
+  cue(Wd('heavier', 9), 'whoosh');
+  add({
+    id: 'shot9b_heavy_secrets',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: Wd('secrets', 9),
+    note: 'MEDIUM full body: Burden lifted, warm supportive nod',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [30, 15],
+        armR: [30, 15],
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: 4, extraPeople: [dave, sam] });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: -4, extraPeople: [dave, sam] });
+
+      const mood = shootMood(MEADOW.scene, [royDay, dave, sam], f0, f1, eo(k), t, { bloom: 0.25 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.70, true);
+    }
+  });
+
+  // ── Shot 10a (Line 10: "Mute her. Move the photos out of sight.") ─────────
+  // SHOT SIZE: MEDIUM_CU (Waist-up, packing memories box in hands clearly visible)
+  cue(Wd('mute', 10), 'zip');
+  add({
+    id: 'shot10a_mute',
+    shotType: 'MEDIUM_CU',
+    character: royDay,
+    hasArmAction: true,
+    at: cut(10),
+    note: 'MEDIUM_CU waist-up: Packing memories in a box, holding box prop',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [40, 50],
+        armR: [40, 50],
+        holdL: PROPS.photoBox, // Hand 10: holding photo archive box
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM_CU', royDay, { azimuthDeg: -4, hasWideArms: true });
+      const f1 = autoFrame('MEDIUM_CU', royDay, { azimuthDeg: 4, hasWideArms: true });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.22 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.75, true);
+    }
+  });
+
+  // ── Shot 10b (Line 10 sub-cut: "Not revenge, just space.") ────────────────
+  // SHOT SIZE: MEDIUM (Full body, healthy space banner)
+  cue(Wd('space', 10), 'whoosh');
+  add({
+    id: 'shot10b_space',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: Wd('not', 10),
+    note: 'MEDIUM full body: Healthy space banner, clean perspective',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [25, 15],
+        armR: [25, 15],
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: 4 });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: -4 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.25 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.80, true);
+
+      ctx.save();
+      ctx.fillStyle = '#059669';
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - 300, 500, 600, 100, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 38px Inter';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('NOT REVENGE. JUST SPACE.', W / 2, 550);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 11a (Line 11: "Sleep, eat, walk.") ──────────────────────────────
+  // SHOT SIZE: MEDIUM (Full body head-to-toe walk cycle, 3 recovery pillars)
+  cue(Wd('sleep', 11), 'inhale');
+  cue(Wd('walk', 11), 'slide');
+  add({
+    id: 'shot11a_sleep_eat',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: cut(11),
+    note: 'MEDIUM full body: Sleep, eat, walk: 3 pillars of recovery',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [30, 10], // Hand 11: calm, deep breathing posture
+        armR: [30, 10],
+        talk: rhubarbTalk(t),
+        legs: 'walk',
+        phase: t * 4,
+      });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: -7 });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: 5 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eio(k), t, { bloom: 0.25 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.84, true);
+
+      ctx.save();
+      const pillars = ['SLEEP 🛌', 'EAT 🥗', 'WALK 🚶'];
+      pillars.forEach((p, idx) => {
+        const px = 220 + idx * 320;
+        ctx.fillStyle = '#059669';
+        ctx.beginPath();
+        ctx.roundRect(px - 140, 500, 280, 80, 20);
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '900 28px Inter';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p, px, 540);
+      });
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 11b (Line 11 sub-cut: "Your body is grieving too, so treat it like it is.")
+  // SHOT SIZE: MEDIUM_CU (Waist-up, deep breath, chest expansion, hands visible)
+  add({
+    id: 'shot11b_body_grieving',
+    shotType: 'MEDIUM_CU',
+    character: royDay,
+    hasArmAction: true,
+    at: Wd('your', 11),
+    note: 'MEDIUM_CU waist-up: Deep breath, chest expansion, self-compassion',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      const breathPhase = Math.sin(lt * 3.0);
+      applyEmotion(royDay, t, {
+        armL: [20 + breathPhase * 6, 8],
+        armR: [20 + breathPhase * 6, 8],
+        squash: -0.15 * Math.max(0, breathPhase),
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM_CU', royDay, { azimuthDeg: 0 });
+      const f1 = autoFrame('MEDIUM_CU', royDay, { azimuthDeg: 4 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.25 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.88, true);
+    }
+  });
+
+  // ── Shot 12 (Line 12: "Write the angry message. Then don't send it.") ────
+  // SHOT SIZE: MEDIUM_CU (Waist-up, drafts message on paper/screen, pauses, deletes it)
+  cue(Wd('angry', 12), 'slide');
+  cue(Wd('send', 12), 'tock');
+  add({
+    id: 'shot12_dont_send',
+    shotType: 'MEDIUM_CU',
+    character: royDay,
+    hasArmAction: true,
+    at: cut(12),
+    note: 'MEDIUM_CU waist-up: Drafts message on paper/screen, pauses, deletes it',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [30, 45],
+        armR: [45, 65], // Hand 12: typing/crumpling draft
+        holdL: PROPS.paper('UNSENT'),
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM_CU', royDay, { azimuthDeg: -4, hasWideArms: true });
+      const f1 = autoFrame('MEDIUM_CU', royDay, { azimuthDeg: 3, hasWideArms: true });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.24 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.92, true);
+
+      ctx.save();
+      if (lt > 1.0) {
+        ctx.translate(W / 2, 540);
+        ctx.rotate(-0.15);
+        ctx.strokeStyle = '#EF4444';
+        ctx.lineWidth = 10;
+        ctx.strokeRect(-240, -55, 480, 110);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+        ctx.fillRect(-240, -55, 480, 110);
+
+        ctx.fillStyle = '#EF4444';
+        ctx.font = '900 54px Inter';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('DO NOT SEND', 0, 0);
+      }
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 13a (Line 13: "Day one hurts. Day thirty hurts less.") ──────────
+  // SHOT SIZE: MEDIUM (Full body head-to-toe, Day 1 -> Day 30 timeline)
+  cue(Wd('thirty', 13), 'ding');
+  add({
+    id: 'shot13a_day1_30',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: cut(13),
+    note: 'MEDIUM full body: Day 1 -> Day 30 emotional progress',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [25, 15],
+        armR: [40, 45], // Hand 13: pointing at timeline
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: -6 });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: 4 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eio(k), t, { bloom: 0.26 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.95, true);
+
+      ctx.save();
+      const nodes = [
+        { label: 'DAY 1', sub: '🌧️ Hurts', done: true, color: '#EF4444' },
+        { label: 'DAY 30', sub: '⛅ Hurts Less', done: lt > 1.0, color: '#F59E0B' },
+      ];
+      nodes.forEach((n, idx) => {
+        const ny = 480 + idx * 115;
+        ctx.fillStyle = n.done ? n.color : 'rgba(100, 116, 139, 0.6)';
+        ctx.beginPath();
+        ctx.roundRect(140, ny, 800, 95, 20);
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '900 36px Inter';
+        ctx.textAlign = 'left';
+        ctx.fillText(n.label, 190, ny + 48);
+
+        ctx.textAlign = 'right';
+        ctx.font = '700 32px Inter';
+        ctx.fillText(n.sub, 900, ny + 48);
+      });
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 13b (Line 13 sub-cut: "Day ninety, you laugh at something.") ────
+  // SHOT SIZE: MEDIUM (Full body head-to-toe, genuine laugh, hands on hips)
+  cue(Wd('ninety', 13), 'sparkle');
+  add({
+    id: 'shot13b_day90',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: Wd('ninety', 13) - 0.15,
+    note: 'MEDIUM full body: Day 90 triumph, laughing with genuine joy',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [30, 25],
+        armR: [40, 45],
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: 4 });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: -3 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.28 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 0.98, true);
+
+      ctx.save();
+      ctx.fillStyle = '#10B981';
+      ctx.beginPath();
+      ctx.roundRect(140, 520, 800, 110, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 42px Inter';
+      ctx.textAlign = 'left';
+      ctx.fillText('DAY 90', 190, 575);
+
+      ctx.textAlign = 'right';
+      ctx.font = '800 36px Inter';
+      ctx.fillText('☀️ YOU LAUGH AGAIN', 900, 575);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 14a (Line 14: "Self-respect isn't winning the breakup.") ─────────
+  // SHOT SIZE: MEDIUM (Full body head-to-toe, dignified posture)
+  cue(Wd('self-respect', 14), 'ding');
+  add({
+    id: 'shot14a_not_winning',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: cut(14),
+    note: 'MEDIUM full body: Self respect isn\'t winning, steady posture',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [25, 15],
+        armR: [25, 15],
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: -4 });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: 2 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.3 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 1.0, true);
+    }
+  });
+
+  // ── Shot 14b (Line 14 sub-cut: "It's refusing to beg for what you deserve.")
+  // SHOT SIZE: MEDIUM_CU (Waist-up, proud thumbs-up gesture clearly visible in frame)
+  cue(Wd('beg', 14), 'tock');
+  cue(Wd('deserve', 14), 'sparkle');
+  add({
+    id: 'shot14b_refuse_beg',
+    shotType: 'MEDIUM_CU',
+    character: royDay,
+    hasArmAction: true,
+    at: Wd('refusing', 14),
+    note: 'MEDIUM_CU waist-up: Proud thumbs up gesture, 100% self-respect',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [25, 15],
+        armR: [75, 40], // Hand 14: thumbs up gesture!
+        holdR: PROPS.thumbsUp,
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM_CU', royDay, { azimuthDeg: 0, hasWideArms: true });
+      const f1 = autoFrame('MEDIUM_CU', royDay, { azimuthDeg: -3, hasWideArms: true });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.32 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 1.0, true);
+
+      ctx.save();
+      ctx.fillStyle = '#059669';
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - 420, 500, 840, 120, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 42px Inter';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('REFUSE TO BEG.', W / 2, 560);
+      ctx.restore();
+    }
+  });
+
+  // ── Shot 15a (Line 15: "Roy didn't forget her.") ─────────────────────────
+  // SHOT SIZE: MEDIUM (Full body head-to-toe walking stride)
+  cue(Wd('forget', 15), 'pop');
+  add({
+    id: 'shot15a_stopped_waiting',
+    shotType: 'MEDIUM',
+    character: royDay,
+    hasArmAction: true,
+    at: cut(15),
+    note: 'MEDIUM full body: Roy walking away into golden sunrise, calm stride',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [-30, 20], // Hand 15: rhythmic walking stride
+        armR: [30, 20],
+        legs: 'walk',
+        phase: t * 5,
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('MEDIUM', royDay, { azimuthDeg: 0 });
+      const f1 = autoFrame('MEDIUM', royDay, { azimuthDeg: 4 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.4 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 1.0, true);
+    }
+  });
+
+  // ── Shot 15b (Line 15 sub-cut: "He just stopped waiting.") ────────────────
+  // SHOT SIZE: WIDE (Grand establishing wide shot, Roy walking away into golden sunrise)
+  cue(Wd('stopped', 15), 'sparkle');
+  cue(Wd('waiting', 15), 'ding');
+  add({
+    id: 'shot15b_sunrise_walk',
+    shotType: 'WIDE',
+    character: royDay,
+    hasArmAction: true,
+    at: Wd('stopped', 15),
+    note: 'WIDE slow push-in on Roy walking away into sunrise, peaceful closure',
+    draw(lt, d, t, blit) {
+      const k = lt / d;
+      applyEmotion(royDay, t, {
+        armL: [-30, 20],
+        armR: [30, 20],
+        legs: 'walk',
+        phase: t * 5,
+        talk: rhubarbTalk(t),
+      });
+
+      const f0 = autoFrame('WIDE', royDay, { azimuthDeg: 2 });
+      const f1 = autoFrame('WIDE', royDay, { azimuthDeg: -2, distanceMultiplier: 0.9 });
+
+      const mood = shootMood(MEADOW.scene, [royDay], f0, f1, eo(k), t, { bloom: 0.45 });
+      blit();
+      drawMoodGrading(ctx, mood, W, H, t);
+
+      drawSelfRespectHUD(3, 1.0, true);
+
+      ctx.save();
+      const popK = eob(seg(lt, 0.4, 1.4));
+      ctx.translate(W / 2, 540);
+      ctx.scale(popK, popK);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.beginPath();
+      ctx.roundRect(-400, -65, 800, 130, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#FBBF24';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 46px Inter';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('HE STOPPED WAITING.', 0, 0);
+      ctx.restore();
+    }
+  });
+
+  return { shots: S, cues: CUES, cam };
 }

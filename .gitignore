@@ -33,7 +33,7 @@ data/*.wav
 *.part
 *.tmp
 fs-sheet-*
-review/frames/
+review/
 
 # Large archives (fetch via scripts/fetch_assets.sh instead)
 *.zip

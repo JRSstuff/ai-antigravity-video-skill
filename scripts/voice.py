@@ -74,6 +74,8 @@ def main():
     if not a.project: ap.error('project folder missing')
     from kokoro_onnx import Kokoro
     P = Path(a.project); S = json.loads((P / 'script.json').read_text())
+    if isinstance(S, list):
+        S = {'lines': S}
     voice = a.voice or S.get('voice', 'am_michael'); speed = a.speed or S.get('speed', 1.0)
     k = Kokoro(str(KDIR / 'kokoro-v1.0.onnx'), str(KDIR / 'voices-v1.0.bin'))
     lang = 'en-gb' if voice.startswith('b') else 'en-us'

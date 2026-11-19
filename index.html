@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modular 3D Scene & Animation Player · Pure Three.js</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0B0F19;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #F8FAFC;
+      user-select: none;
+    }
+
+    #webgl-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      outline: none;
+    }
+
+    /* Top Floating Control Dock */
+    #top-dock {
+      position: fixed;
+      top: 20px;
+      right: 24px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 9999px;
+      padding: 8px 18px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+    }
+
+    .dock-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-right: 1px solid rgba(255, 255, 255, 0.12);
+      padding-right: 12px;
+    }
+    .dock-group:last-child {
+      border-right: none;
+      padding-right: 0;
+    }
+
+    .dock-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #94A3B8;
+    }
+
+    select, button {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      color: #F1F5F9;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      outline: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    select:hover, button:hover {
+      background: rgba(51, 65, 85, 0.95);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    #btn-play-toggle {
+      background: #2563EB;
+      border-color: #3B82F6;
+      color: #FFFFFF;
+      padding: 6px 16px;
+      border-radius: 9999px;
+      font-weight: 700;
+    }
+    #btn-play-toggle:hover {
+      background: #1D4ED8;
+    }
+
+    /* Color Swatches */
+    .swatch-tray {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .color-swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .color-swatch:hover {
+      transform: scale(1.25);
+      border-color: #FFFFFF;
+    }
+
+    /* Bottom Scrubber Bar */
+    #timeline-bar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      width: min(90%, 780px);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 9999px;
+      padding: 10px 22px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+    }
+
+    #timeline-scrub {
+      flex: 1;
+      accent-color: #38BDF8;
+      cursor: pointer;
+      height: 5px;
+    }
+
+    #time-display {
+      font-size: 12px;
+      font-weight: 700;
+      color: #94A3B8;
+      min-width: 82px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #CBD5E1;
+      cursor: pointer;
+    }
+    .toggle-label input {
+      accent-color: #10B981;
+      cursor: pointer;
+    }
+  </style>
+
+  <!-- Pure Three.js Import Map -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three.module.js",
+      "three/addons/": "./vendor/addons/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 3D WebGL Canvas -->
+  <canvas id="webgl-canvas"></canvas>
+
+  <!-- Top Floating Controls Dock -->
+  <div id="top-dock">
+    <div class="dock-group">
+      <button id="btn-play-toggle">❚❚ PAUSE</button>
+    </div>
+
+    <!-- Room Swap -->
+    <div class="dock-group">
+      <span class="dock-label">Room:</span>
+      <select id="select-room">
+        <option value="studio">Studio Room</option>
+        <option value="bedroom">Cozy Bedroom</option>
+      </select>
+    </div>
+
+    <!-- Character Swap -->
+    <div class="dock-group">
+      <span class="dock-label">Character:</span>
+      <select id="select-char">
+        <option value="quaternius">Quaternius Rig</option>
+        <option value="kenney">Kenney Rig</option>
+      </select>
+    </div>
+
+    <!-- Animation Clip Trigger -->
+    <div class="dock-group">
+      <span class="dock-label">Clip:</span>
+      <select id="select-clip">
+        <option value="Idle">Idle</option>
+        <option value="Talk">Talk</option>
+        <option value="Gesture">Gesture</option>
+        <option value="Walk">Walk</option>
+      </select>
+    </div>
+
+    <!-- Outfit Color Configurator Swatches -->
+    <div class="dock-group">
+      <span class="dock-label">Shirt:</span>
+      <div class="swatch-tray">
+        <div class="color-swatch" data-color="#2563EB" style="background: #2563EB;" title="Royal Blue"></div>
+        <div class="color-swatch" data-color="#10B981" style="background: #10B981;" title="Emerald Green"></div>
+        <div class="color-swatch" data-color="#F97316" style="background: #F97316;" title="Vibrant Amber"></div>
+        <div class="color-swatch" data-color="#8B5CF6" style="background: #8B5CF6;" title="Neon Purple"></div>
+        <div class="color-swatch" data-color="#EC4899" style="background: #EC4899;" title="Rose Pink"></div>
+      </div>
+    </div>
+
+    <!-- Orbit Toggle -->
+    <div class="dock-group">
+      <label class="toggle-label">
+        <input type="checkbox" id="toggle-orbit">
+        <span>Free Orbit</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Bottom Timeline Scrubber -->
+  <div id="timeline-bar">
+    <input type="range" id="timeline-scrub" min="0" max="100" value="0" step="0.1">
+    <span id="time-display">0.0s / 24.0s</span>
+  </div>
+
+  <!-- Main ES Module Application -->
+  <script type="module" src="./src/player/main.js"></script>
+</body>
+</html>

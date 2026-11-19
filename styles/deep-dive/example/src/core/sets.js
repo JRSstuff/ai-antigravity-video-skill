@@ -105,3 +105,209 @@ export function vessel(E) {
     },
   };
 }
+
+// ═════════════════════════ SKIN & ARRECTOR PILI FOLLICLE STAGE ═════════════════════════
+export function skinStage(E) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#080D1A');
+  scene.fog = new THREE.FogExp2('#080D1A', 0.06);
+
+  // 1. Stratified Skin Block (Cutaway Block extending from z = 0 back into z = -2.2)
+  const blockW = 3.2;
+  const blockD = 2.2;
+  const blockZ = -blockD / 2; // -1.1, so front cut plane is exactly at z = 0!
+
+  // Subcutaneous fat layer (bottom - rich golden nodules)
+  const fatMat = new THREE.MeshStandardMaterial({ color: '#D97706', roughness: 0.6, metalness: 0.1 });
+  const fat = new THREE.Mesh(new THREE.BoxGeometry(blockW, 0.45, blockD), fatMat);
+  fat.position.set(0, -0.68, blockZ);
+  fat.receiveShadow = true;
+  scene.add(fat);
+
+  // Adipose fat globules along the cut front edge (z = 0.02)
+  const globMat = new THREE.MeshStandardMaterial({ color: '#F59E0B', roughness: 0.45, metalness: 0.05 });
+  const globGeo = new THREE.SphereGeometry(0.1, 12, 10);
+  for (let gx = -1.3; gx <= 1.3; gx += 0.22) {
+    const glob = new THREE.Mesh(globGeo, globMat);
+    glob.position.set(gx + (Math.sin(gx * 7) * 0.05), -0.68 + (Math.cos(gx * 5) * 0.08), 0.02);
+    glob.scale.set(1.0 + Math.sin(gx * 3) * 0.3, 0.8 + Math.cos(gx * 4) * 0.25, 0.5);
+    scene.add(glob);
+  }
+
+  // Dermis layer (middle collagen network - rich coral red)
+  const dermisMat = new THREE.MeshPhysicalMaterial({
+    color: '#BE123C',
+    roughness: 0.38,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.2,
+    emissive: '#4C0519',
+    emissiveIntensity: 0.25,
+  });
+  const dermis = new THREE.Mesh(new THREE.BoxGeometry(blockW, 0.85, blockD), dermisMat);
+  dermis.position.set(0, -0.05, blockZ);
+  dermis.receiveShadow = true;
+  scene.add(dermis);
+
+  // Epidermis layer (top skin surface - soft warm peach skin)
+  const epiMat = new THREE.MeshPhysicalMaterial({
+    color: '#FDA4AF',
+    roughness: 0.35,
+    clearcoat: 0.8,
+    clearcoatRoughness: 0.2,
+    sheen: 0.5,
+    sheenColor: new THREE.Color('#FFE4E6'),
+  });
+  const epidermis = new THREE.Mesh(new THREE.BoxGeometry(blockW, 0.12, blockD), epiMat);
+  epidermis.position.set(0, 0.44, blockZ);
+  epidermis.receiveShadow = true;
+  scene.add(epidermis);
+
+  // Goosebump surface mound (rises around follicle exit at z = 0.01)
+  const moundGeo = new THREE.CylinderGeometry(0.24, 0.52, 0.18, 32);
+  const moundMat = epiMat.clone();
+  const mound = new THREE.Mesh(moundGeo, moundMat);
+  mound.position.set(0, 0.51, 0.01);
+  mound.scale.set(1, 0.1, 1);
+  scene.add(mound);
+
+  // Background Hairs on the epidermis surface (z < 0) for rich 3D depth
+  const bgHairMat = new THREE.MeshPhysicalMaterial({ color: '#1E293B', roughness: 0.35, clearcoat: 0.8 });
+  const bgHairGeo = new THREE.CylinderGeometry(0.014, 0.026, 1.3, 12);
+  const bgPositions = [
+    [-0.9, 0.5 + 0.6, -0.5, 0.35],
+    [0.75, 0.5 + 0.6, -0.4, 0.3],
+    [-0.45, 0.5 + 0.6, -1.0, 0.4],
+    [0.45, 0.5 + 0.6, -1.1, 0.28],
+    [1.1, 0.5 + 0.6, -0.7, 0.38],
+  ];
+  for (const [bx, by, bz, rotZ] of bgPositions) {
+    const bgH = new THREE.Mesh(bgHairGeo, bgHairMat);
+    bgH.position.set(bx, by, bz);
+    bgH.rotation.z = rotZ;
+    scene.add(bgH);
+  }
+
+  // 2. Hair Follicle & Shaft (positioned directly on the cut face at z = 0.03)
+  const folliclePivot = new THREE.Group();
+  folliclePivot.position.set(0, -0.38, 0.03);
+  scene.add(folliclePivot);
+
+  // Hair Bulb (root)
+  const bulbMat = new THREE.MeshPhysicalMaterial({ color: '#451A03', roughness: 0.3, clearcoat: 0.9 });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 24, 16), bulbMat);
+  bulb.position.set(0, 0, 0);
+  folliclePivot.add(bulb);
+
+  // Follicle Sheath
+  const sheathMat = new THREE.MeshPhysicalMaterial({
+    color: '#FB7185',
+    roughness: 0.45,
+    transparent: true,
+    opacity: 0.88,
+    clearcoat: 0.6,
+  });
+  const sheath = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 0.8, 20), sheathMat);
+  sheath.position.set(0, 0.42, 0);
+  folliclePivot.add(sheath);
+
+  // Hair Shaft (extends up into air)
+  const hairMat = new THREE.MeshPhysicalMaterial({
+    color: '#0F172A',
+    roughness: 0.25,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.1,
+    metalness: 0.2,
+  });
+  const hair = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.048, 2.2, 20), hairMat);
+  hair.position.set(0, 1.15, 0);
+  folliclePivot.add(hair);
+
+  // Sebaceous Gland (attached to upper follicle sheath)
+  const glandMat = new THREE.MeshPhysicalMaterial({
+    color: '#FEF08A',
+    roughness: 0.45,
+    clearcoat: 0.6,
+    emissive: '#CA8A04',
+    emissiveIntensity: 0.2,
+  });
+  const gland1 = new THREE.Mesh(new THREE.SphereGeometry(0.08, 14, 12), glandMat);
+  gland1.position.set(0.12, 0.22, 0);
+  folliclePivot.add(gland1);
+  const gland2 = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), glandMat);
+  gland2.position.set(0.15, 0.14, 0);
+  folliclePivot.add(gland2);
+
+  // 3. Arrector Pili Muscle (Anchored from dermis to follicle mid-bulge at z = 0.04)
+  const muscleGroup = new THREE.Group();
+  scene.add(muscleGroup);
+
+  const muscleMat = new THREE.MeshPhysicalMaterial({
+    color: '#EF4444',
+    roughness: 0.35,
+    clearcoat: 0.8,
+    emissive: '#7F1D1D',
+    emissiveIntensity: 0.4,
+  });
+  const muscle = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.6, 8, 20), muscleMat);
+  muscle.rotation.z = 0.64;
+  muscle.position.set(-0.38, -0.02, 0.04);
+  muscleGroup.add(muscle);
+
+  // 4. Sympathetic Nerve Fiber (Electric yellow pulsing nerve at z = 0.05)
+  const nerveMat = new THREE.MeshStandardMaterial({
+    color: '#FACC15',
+    emissive: '#FACC15',
+    emissiveIntensity: 1.6,
+    roughness: 0.2,
+  });
+  const nerveCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-1.0, -0.65, 0.05),
+    new THREE.Vector3(-0.68, -0.38, 0.05),
+    new THREE.Vector3(-0.45, -0.12, 0.05),
+    new THREE.Vector3(-0.28, 0.0, 0.05),
+  ]);
+  const nerveGeo = new THREE.TubeGeometry(nerveCurve, 40, 0.016, 10, false);
+  const nerve = new THREE.Mesh(nerveGeo, nerveMat);
+  scene.add(nerve);
+
+  // 5. Cinematic 3-Point Lighting for Macro Tissue
+  const key = new THREE.DirectionalLight('#FFFBEB', 3.2);
+  key.position.set(3.2, 4.2, 3.5);
+  scene.add(key);
+
+  const fill = new THREE.DirectionalLight('#38BDF8', 1.4);
+  fill.position.set(-3.0, 2.0, 2.2);
+  scene.add(fill);
+
+  const rim = new THREE.DirectionalLight('#FDA4AF', 2.2);
+  rim.position.set(0.5, 2.5, -3.0);
+  scene.add(rim);
+
+  const amb = new THREE.AmbientLight('#1E293B', 0.9);
+  scene.add(amb);
+
+  return {
+    scene,
+    folliclePivot,
+    muscle,
+    muscleMat,
+    nerveMat,
+    mound,
+    update(t, k = 0) {
+      const targetAngle = THREE.MathUtils.lerp(0.55, 0.0, k);
+      folliclePivot.rotation.z = targetAngle;
+
+      const muscleScaleX = THREE.MathUtils.lerp(1.0, 1.5, k);
+      const muscleScaleY = THREE.MathUtils.lerp(1.0, 0.68, k);
+      muscle.scale.set(muscleScaleX, muscleScaleY, muscleScaleX);
+
+      muscleMat.emissive.set(k > 0.4 ? '#F97316' : '#7F1D1D');
+      muscleMat.emissiveIntensity = THREE.MathUtils.lerp(0.3, 1.2, k);
+
+      nerveMat.emissiveIntensity = 1.0 + Math.sin(t * 14.0) * 0.6;
+
+      mound.scale.y = THREE.MathUtils.lerp(0.1, 1.4, k);
+      mound.position.y = 0.51 + k * 0.08;
+    },
+  };
+}

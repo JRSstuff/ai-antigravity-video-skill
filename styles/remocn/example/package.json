@@ -1,0 +1,21 @@
+{
+  "name": "faceless-remocn-short",
+  "version": "1.0.0",
+  "description": "Remocn-powered programmatic vertical short video with Remotion",
+  "scripts": {
+    "start": "remotion preview",
+    "build": "remotion render src/index.ts Main renders/video.mp4",
+    "render-720": "remotion render src/index.ts Main renders/test_720.mp4 --scale=0.6666"
+  },
+  "dependencies": {
+    "remotion": "^4.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "lucide-react": "^0.300.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

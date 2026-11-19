@@ -54,6 +54,8 @@ def inline_fallback(P, S):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('project'); ap.add_argument('--audio'); a = ap.parse_args()
     P = Path(a.project); S = json.loads((P / 'script.json').read_text())
+    if isinstance(S, list):
+        S = {'lines': S}
     try:
         from faster_whisper import WhisperModel
         model = WhisperModel('small.en', device='cpu', compute_type='int8')

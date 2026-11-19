@@ -1,0 +1,16 @@
+{
+  "topic": "Three mistakes that kill short-form video retention",
+  "goal": "teach + viral retention",
+  "audience": "creators, founders, social media marketers",
+  "style": "remocn",
+  "length_target_s": 30,
+  "hook_type": "Specific stat countdown in first 3 seconds",
+  "tone": "sharp, modern, direct, high-retention",
+  "character": "none (kinetic typography + modern device mockups)",
+  "ending": "Loop back to the opening word ('three')",
+  "emotion_arc": "shocked > anxious > determined > relieved > hopeful",
+  "shot_size_mix": "WIDE 20% · MEDIUM 50% · MEDIUM_CU 20% · CLOSE 10%",
+  "language": "en (am_michael Kokoro voice)",
+  "facts": "80% dropoff benchmark within first 3 seconds",
+  "extras": "Remocn motion primitives (BlurReveal, DeviceMockup, ShimmerSweep)"
+}

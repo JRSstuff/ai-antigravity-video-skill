@@ -1,133 +1,256 @@
 ---
 name: ai-antigravity-video-skill
-description: Make narrated faceless YouTube Shorts / TikToks / Reels fully in code on the user's computer, with a free local AI voice and word-synced captions, $0. Six styles - Deep Dive 3D (Zack D. Films-like 3D "what happens if" body/science explainers), Night File 3D (unsolved mysteries, true crime), Inside Out (flat 2D x-ray explainers), Stick Story (stick-figure "what would you do if" survival steps), Paper Atlas (history in cut paper with maps), Tall Tale 3D (funny true stories with flat 2D cartoon people in a sunny 3D world, one-word captions). Use whenever someone wants a faceless short, a what-if or what-happens-if explainer, a Zack D. Films style video, a mystery or true-crime short, a stick-figure story, a history short, a funny true story or storytime cartoon short, or a video in one of these styles, even from just a topic. Can also upload the finished short to the user's YouTube channel through Zapier when they ask.
+description: Make narrated faceless YouTube Shorts / TikToks / Reels fully in code on the user's computer, with a free local AI voice and word-synced captions, $0. Seven styles - Deep Dive 3D (Zack D. Films-like 3D "what happens if" body/science explainers), Night File 3D (unsolved mysteries, true crime), Inside Out (flat 2D x-ray explainers), Stick Story (stick-figure "what would you do if" survival steps), Paper Atlas (history in cut paper with maps), Tall Tale 3D (funny true stories with flat 2D cartoon people in a sunny 3D world, one-word captions), and Remocn Motion (kinetic typography & modern UI). Use whenever someone wants a faceless short, a what-if or what-happens-if explainer, a Zack D. Films style video, a mystery or true-crime short, a stick-figure story, a history short, a funny true story, or a video in one of these styles, even from just a topic.
 ---
 
-# Faceless Shorts
+# 🎬 AI Antigravity Video Skill: Autonomous Production Guide
 
-> [!IMPORTANT]
-> **PLAN BEFORE YOU BUILD (Mandatory Phase 0)**:
-> Before running `new_video.sh`, `voice.py`, or writing any generation code, **always** follow the intake and planning framework in [skills/PLANNING.md](skills/PLANNING.md).
-> 1. Check user prompt against the Brief Checklist. If details are missing, ask ONE short round of questions (max 5) with multiple-choice options and smart defaults marked `(Recommended)`.
-> 2. Auto-recommend styles from topic keywords if unspecified.
-> 3. Save resolved settings to `projects/<name>/brief.json`.
-> 4. Present the One-Screen Plan Summary and **WAIT for user approval ("Go")** before building.
-> 5. **Quality Gate**: Before the final render, run `tools/capture.mjs check`, build the contact sheet (`review/all.jpg`), verify character arm movement (no T-pose / frozen limbs) and pacing (visual change every 2-3s), and report problems honestly.
+> **Zero-Context Autonomous Manual**: This document provides the complete, self-contained operational workflow for any AI harness (Antigravity, Claude Code, Cursor, OpenCode, Codex, Hermes) to guide a user from a raw topic idea to a finished broadcast-quality vertical short (1080×1920 @ 30fps) with $0 API cost, 100% local rendering, and deterministic $f(t)$ math.
 
-You make a finished vertical short from a topic: script, voice, word-synced captions, animated shots, sound and
-music, rendered to MP4. **Everything is code**: canvas drawing, headless Chrome capture, ffmpeg, a local Kokoro voice,
-local Whisper word timing, numpy sound. No AI images or video, no API keys, no credits.
-`SKILL` = the folder this file is in. Projects live in `~/faceless-shorts/<short-name>/`.
+---
 
-| style | what it makes | length · aspect |
-|---|---|---|
-| **Deep Dive 3D** `deep-dive` | the flagship, Zack D. Films-like: sculpted 3D people in sunlit sets, glowing x-ray bodies, camera journeys through blood vessels, shallow focus. "What happens if…?" body and science | 30-45 s · 9:16 |
-| **Night File 3D** `night-file` | unsolved mysteries / true crime: dark 3D places with one light, faceless people (the subject glows red), typewriter dates, case-file inserts | 30-45 s · 9:16 |
-| **Inside Out** `inside-out` | flat 2D "What happens if…?" explainer: a simple hero, x-ray cutaways, bold 1-3 word captions, punchy cuts | 25-40 s · 9:16 |
-| **Stick Story** `stick-story` | "What would you do if…?" survival steps: stick people with acting eyes, flat rooms day/night, gold step cards | 30-45 s · 9:16 |
-| **Paper Atlas** `paper-atlas` | history in cut paper: parchment maps, crimson routes, gold date ribbons, period figures | 30-45 s · 9:16 |
-| **Tall Tale 3D** `tall-tale` | funny true stories: flat 2D cartoon people (big round heads, ink outlines) acting in a sunny 3D small-town world, camera always moving, one-word captions | 40-60 s · 9:16 |
+## 1. Core Operating Principles
 
-Which style: body / health / science "what happens if" → **Deep Dive 3D** (or **Inside Out** for a lighter, faster 2D
-look) · creepy, unexplained, true crime, "this happened in 1971" → **Night File 3D** · survival, life hacks, "here's what
-you do" → **Stick Story** · a historical event, "how X happened" → **Paper Atlas** · a funny or clever true story, a con, a loophole, "this guy did X" → **Tall Tale 3D**. If it isn't obvious, ask once.
+1. **Autonomous Leadership**: When the user gives a topic (e.g., *"Make a video about Why Do We Yawn"* or *"Create a short about Roy's breakup"*), take immediate initiative. Do not ask 20 open-ended questions. If details are missing, run **Phase 0** (ask ONE multiple-choice block with `(Recommended)` defaults), get approval on the One-Screen Plan, then execute the full pipeline.
+2. **100% Code-Driven & Free**: Canvas 2D drawing, Three.js WebGL rendering, headless Chrome capture, local Kokoro-82M ONNX voice, local Whisper small.en word alignment, and procedural numpy sound synthesis. Zero AI video hallucination, zero subscriptions, zero API keys.
+3. **Deterministic Math $f(t)$**: All visual animation, character gestures, camera motion, and sound cues are strictly pure mathematical functions of film time $t$. Frame $N$ is byte-for-byte identical every single render.
+4. **Never Ship Uninspected Visuals**: Never render the final video without passing `tools/capture.mjs check` and inspecting the contact sheet (`review/all.jpg`) to verify character movement, framing, and caption visibility.
 
-Each style = `styles/<style>/style-sheet.png` (the look in one image, drawn by the style's own code) + `STYLE.md` (the rules + the engine manual) +
-`example/` (a complete project that renders as-is). **Read the style's STYLE.md in full before planning.**
+---
 
-## 0. First use on a computer
-`bash SKILL/scripts/setup.sh` until it prints **All set** (checks Node 22+, ffmpeg, Chrome; builds `~/.faceless-shorts/venv`;
-downloads the Kokoro voice ~340 MB and Whisper small.en ~0.5 GB). Install anything missing the free, official way, and ask
-before anything that needs a password. Then `bash SKILL/scripts/selftest.sh` must print **SELFTEST PASSED**: open the
-contact sheet and clip it names and look at them.
+## 2. Style Auto-Recommender
 
-## 1. Intake (ONE message, defaults filled in)
-Ask only what's unknown, all at once: topic (or "you pick 3 ideas"), a link to a short whose format they like (optional),
-length (default ~30 s), voice (`SKILL/scripts/py SKILL/scripts/voice.py --list`; default `am_michael`), voiceover mode:
-**AI voice** (default) · **their own recording** (they record after seeing the script; `words.py --audio`) ·
-**captions-only** (no voice yet; `estimate.py`), music (built-in bed · none · their own royalty-free file), end line / handle.
-"Just go" = the defaults.
+When the user specifies a style, honor it. If unspecified, auto-select based on keywords:
 
-## 2. The plan (ONE screen, then wait)
-Show: title · the full narration, one line per cut, with its caption chunks (`WHAT IF *YOU | SWALLOW *GUM?`) · the shot list,
-one line each (what we see, what moves, which word it lands on) · new components you'll add to the kit, if any · facts and
-their sources. Ask **"Build it?"** and wait.
+| Style | Directory | Topic Keywords & Best Use | Visual Signatures |
+| :--- | :--- | :--- | :--- |
+| **Deep Dive 3D** | `styles/deep-dive` | Body, biology, health, medicine, science, *"what happens if"*, anatomy | 3D clay characters, sunlit rooms, translucent cyan X-ray bodies, 3D anatomical cutaways, shallow depth of field |
+| **Tall Tale 3D** | `styles/tall-tale` | Funny true stories, dating, relationship rewinds, character dilemmas, crazy feats | Sunny 3D world, expressive 2.5D/3D characters with animated arms, dynamic camera moves, comedic pacing |
+| **Inside Out** | `styles/inside-out` | Snappy 2D science explainers, fast physical comparisons | Flat bold 2D graphics, cyan/red X-ray cuts, punchy 1–3 word captions |
+| **Stick Story** | `styles/stick-story` | Survival guides, emergency hacks, *"what would you do if"* | Stylized stick heroes with animated eyes, gold tactical step cards, flat environments |
+| **Paper Atlas** | `styles/paper-atlas` | History, wars, battles, trade routes, ancient voyages | Cut-paper parchment maps, crimson movement routes, gold ribbon dates, period figure silhouettes |
+| **Night File 3D** | `styles/night-file` | Unsolved mysteries, true crime, eerie history, creepy lore | Dark 3D sets, single harsh spotlight, red glowing silhouette subjects, typewriter text, case folders |
+| **Remocn Motion** | `styles/remocn` | Tech breakdowns, SaaS launches, countdown stats, kinetic typography | Sleek kinetic text, device mockups, notification toasts, rolling counters, smooth spring curves |
 
-**Script rules.** Write it the way a person actually talks to a friend: full, flowing sentences with connecting words
-("Well,", "where", "but", "so", "which means"), not a list of short caption-like statements. ~90-110 words for 35 s.
-**A line is a CUT, not a sentence**: split each sentence into 1-3 lines at natural pauses (commas, "and", "where"), so
-the picture changes every 1.5-3.5 s while the voice keeps flowing (voice.py speaks each whole sentence in one pass).
-Shape: hook question, then escalation, a myth or surprise, a twist ("but if you…"), a punchy last line that loops.
-Write numbers as they're said ("seven"). Read it out loud in your head: if it sounds like captions, rewrite it.
-Original writing only: take a format you like, never another creator's script or shots. Every fact is checked against a
-reliable source (list them in `script.json` "sources"). Health topics: accurate, no gore, no scary misinformation.
+---
 
-## 3. Build
-1. `bash SKILL/scripts/new_video.sh <style> <short-name>` copies the example into `~/faceless-shorts/<short-name>/`.
-2. Write `script.json` (lines + caps + gaps; see STYLE.md).
-3. Timing: `SKILL/scripts/py SKILL/scripts/voice.py <proj>` then `SKILL/scripts/py SKILL/scripts/words.py <proj>`
-   (own recording: `words.py <proj> --audio their.m4a`; captions-only: `estimate.py <proj>`).
-4. Rewrite `src/shots.js`: one shot per line (or two for long lines), each placed with `cut(i)` and its key moments on
-   words with `Wd('word', line)`. Reuse the kit (`src/core/kit.js`); add new components there, in the style's look.
-5. In the project: `node tools/capture.mjs check` (must say CHECK OK) → `node tools/capture.mjs cues` →
-   `SKILL/scripts/py tools/mix.py .` → QA (section 4) → `node tools/capture.mjs video renders/<name>.mp4`.
-   Iterating on one shot: `node tools/capture.mjs frames review/f "4.2,4.6"` and look.
+## 3. The 8-Phase Production Pipeline
 
-## 4. QA: never show a frame you haven't looked at
-`node tools/capture.mjs sheet review/all.jpg 0.5 10` (a frame every 0.5 s, time-stamped) and read the whole sheet, then key
-frames full size. For every frame ask:
-- **Does it make sense?** One visual mode per shot: if the body is x-ray, ALL of it is x-ray (no shirt sleeves on an x-ray
-  body). Props move with whatever holds them (gum stays in the hand until the hand reaches the mouth). Nothing appears before
-  its cause.
-- **Does it match the narration at that moment?** The picture changes just before its line; reveals land on their word.
-- **Is anything colliding?** Moving things never cross labels, pills, the caption zone (y 1250-1550) or each other by accident.
-- **Captions:** 1-3 words, exactly one yellow word, spelled right, on the word being said, readable on a phone.
-- **Style sheet:** only the palette, flat shapes, x-ray views in cyan, danger in red.
-- **Sound:** voice clear over the music; effects soft (no harsh ticks or beeps).
-Fix, re-render the sheet, re-check. Tell the user what you caught and fixed.
+Follow these phases sequentially for every video project:
 
-## 5. Deliver
-Open the MP4 for the user. Also give: a share copy if > 35 MB (`ffmpeg -i in.mp4 -c:v libx264 -crf 21 -preset slow -c:a aac
--b:a 160k -movflags +faststart share.mp4`), the best cover frame (`capture.mjs frames`), a title, a caption and 5-8 hashtags.
-For own-recording mode, also give them the script with each line's timing to read against. Offer one round of precise changes
-and re-render only what changed.
+```
+┌────────────────┐     ┌────────────────┐     ┌────────────────┐     ┌────────────────┐
+│ Phase 0        │ ──> │ Phase 1        │ ──> │ Phase 2        │ ──> │ Phase 3 & 4    │
+│ Intake & Brief │     │ Dual-Track     │     │ Voice & Whisper│     │ 3D Scene, Rigs │
+│ Plan Approval  │     │ Scriptwriting  │     │ Word Alignment │     │ Framing Guards │
+└────────────────┘     └────────────────┘     └────────────────┘     └────────────────┘
+        │                                                                     │
+        ▼                                                                     ▼
+┌────────────────┐     ┌────────────────┐     ┌────────────────┐     ┌────────────────┐
+│ Delivery       │ <── │ Phase 8        │ <── │ Phase 7        │ <── │ Phase 5 & 6    │
+│ Master MP4     │     │ 720p Draft &   │     │ Capture Check  │     │ Remocn HUD &   │
+│ Review Report  │     │ 1080p Master   │     │ Contact Sheet  │     │ Procedural Mix │
+└────────────────┘     └────────────────┘     └────────────────┘     └────────────────┘
+```
 
-## 5b. Publish to YouTube via Zapier (only when the user asks to upload)
-All calls are Code Mode tools: run them inside `execute` as `tools.zapier.*` (do not call them as normal tools). Validated once in a real upload; the values below are exact.
+---
 
-1. **Connect.** If `list_zapier_skills` has a saved skill for uploading, use it. Otherwise make sure the YouTube app is enabled:
-   `discover_zapier_actions({ app: "YouTube" })` → `enable_zapier_action({ selected_api: "YouTubeV4CLIAPI", app_display_name: "YouTube", action: "upload_video" })`.
-   If no connection exists yet, `manage_zapier_connections({ selected_api: "YouTubeV4CLIAPI" })` returns a connect URL for the user.
-2. **Host the file.** The action's `video` / `thumbnail` params need a URL Zapier's servers can fetch; a local path is silently wrong.
-   Put the MP4 on a temp host, in this order (all tested 2026-11-03; on Windows use `curl.exe`):
-   - a. **litterbox** (1 h to 72 h expiry, up to 1 GB): `curl -F "reqtype=fileupload" -F "time=1h" -F "fileToUpload=@renders/<name>.mp4" https://litterbox.catbox.moe/resources/internals/api.php` → returns the direct URL as plain text.
-   - b. **uguu.se** (about 3 h expiry, good for shorts under 35 MB): `curl -F "files[]=@renders/<name>.mp4" https://uguu.se/upload` → returns JSON; use `files[0].url` (the `d.uguu.se/...` link).
-   - c. **catbox** (permanent, no expiry): same call as (a) without `-F "time=1h"`. Public forever, so only with the user's OK.
-   - Skip these (verified broken 2026-11-03, don't waste retries): 0x0.st (uploads disabled), tmpfiles.org (link is a viewer page, not the raw file), gofile.io (raw download needs an account token), file.io (curl API redirects to its web app), bashupload.com, temp.sh (dead).
-   - **Always verify** the URL before using it: `curl -sSI <url>` must return 200/206 with a video content-type. Never trust a host's JSON without checking.
-   - Tell the user this puts their video on a public temp host that expires by itself.
-3. **Confirm first.** This writes to the user's real channel, so confirm before executing: title, visibility (private / unlisted / public) and category.
-   Resolve `category_id` with `inspect_zapier_actions({ tool_name: "youtube_upload_video", enum_property: "category_id" })` if needed.
-   Comedy = 23 (default suggestion for Tall Tale and Deep Dive), Education = 27, Pets & Animals = 15.
-4. **Upload.**
-   `execute_zapier_write_action({ selected_api: "YouTubeV4CLIAPI", action: "upload_video", tool_name: "youtube_upload_video", params: { video: "<temp URL>", title, description (end it with #shorts), tags: [5-8 hashtags without #], category_id: "23", privacy_status, made_for_kids: false, embeddable: true, notify_subscribers: true, default_language: "en", license: "youtube" } })`
-5. **Report.** The result contains `id`; the link is `https://www.youtube.com/watch?v=<id>`. A vertical video of 60 s or less becomes a Short automatically (no extra field).
-   Open the local file for the user (`tools.browser.preview({ path: "renders/<name>.mp4" })`) and give the YouTube URL in text. The in-app browser often fails to load youtube.com with ERR_ABORTED; that is not a failed upload.
-6. **Thumbnails.** Unlisted uploads don't take a custom thumbnail through this action; offer the saved cover frame if the user later makes the video public.
+### Phase 0: Intake & Plan Approval (Mandatory Gate)
 
-## Adding a new style (when the user asks)
-Make `styles/<new-style>/` with `style-sheet.png`, `STYLE.md` (same sections as Inside Out: look rules, palette, format,
-engine/kit map, components, shot anatomy, cue types, QA pitfalls) and a complete `example/`. Copy Inside Out's
-`tools/`, `index.html`, `src/main.js`, `src/core/{lib,timing,captions}.js`, then build the new look's kit and shots. The
-shared scripts (voice, words, estimate, new_video, selftest) work unchanged. Add a row to the table above and run
-`selftest.sh` until every style passes.
+1. If the user's prompt is missing key parameters (style, runtime, character, tone), ask **ONE** combined question block (max 5 questions) with multiple-choice letters and smart defaults marked `(Recommended)`.
+2. If the user says *"default"*, *"go"*, *"you decide"*, or already provided full details, skip the questions and apply defaults immediately.
+3. Save configuration into `<project-dir>/brief.json`:
+   ```json
+   {
+     "topic": "Why Do We Get Goosebumps?",
+     "style": "deep-dive",
+     "length": "55s",
+     "audience": "Ages 16+, social media",
+     "tone": "Warm, curious, funny friend narrator",
+     "character": "Roy (recolored rigged GLB, expressive arms)",
+     "hook_formula": "Nobody Tells You",
+     "ending": "Closed replay loop"
+   }
+   ```
+4. Present the **One-Screen Plan Summary**:
+   - **Title & Hook**: Spoken hook and on-screen hook.
+   - **Full Narration Script**: 14–18 cuts, 150–165 WPM.
+   - **Shot Breakdown**: Visual description, shot size (`WIDE`, `MEDIUM`, `CLOSE`), and character actions.
+   - **Motion Components**: Remocn HUD overlays (`rollingNumber`, `progressHUD`, `notificationToast`).
+5. **Wait for user confirmation ("go" / "proceed")** before executing generation code.
 
-## 3D styles (Deep Dive, Night File, Tall Tale)
-They render real 3D with three.js in headless Chrome. With a graphics card it's fast and full quality. Without one
-(a laptop without GPU acceleration, a cloud sandbox) render with `SOFTWARE_GL=1 QS='&res=0.6&aa=0&shadow=1024'
-FPS=24` in front of `node tools/capture.mjs ...` (≈2 s per frame; tell the user the render time up front, run it in the
-background, and QA with `sheet review/all.jpg 1 10` first). Their STYLE.md files list the 3D API.
+---
 
-## Never
-Generate images or video with AI; spend the user's money or credits; upload to YouTube or any host without the user asking and confirming; copy another creator's script, shots or frames;
-overwrite a user's project without asking; ship a frame you haven't looked at.
+### Phase 1: Dual-Track Scriptwriting & Viral Retention
+
+1. **The Dual-Track Hook Rule**:
+   - **Spoken Hook**: What the narrator says (5–11 words, natural cadence, sayable under 3.0s).
+   - **On-Screen Hook**: Blunt, high-contrast, read in 1 second before heard (3–6 words, e.g. `2 MILLION YEAR MISTAKE`).
+2. **Hook Engineering (`assets/hooks.json`)**:
+   - Score Line 0 using `python scripts/writer.py score-hook "<hook>"`. Must score $\ge 60$ (evaluating length, specificity, stakes, front-loaded payload, and direct address).
+   - Recommended formulas: *Nobody Tells You*, *Cost Confession*, *Negative Command*, *The Red Flag*, *The Replacement*.
+3. **Pacing Rules**:
+   - 150–165 WPM. **A line is a CUT, not a sentence**. Split sentences into 1.5–3.5s cuts so the picture changes continuously. Never allow a static visual frame past 1.5s.
+4. **Anti-Slop & Humanizer Gate**:
+   - Run `python scripts/writer.py humanize draft.txt` to strip AI clichés (*delve, tapestry, crucial, testament, pivotal, game-changer*).
+5. **The Closed Replay Loop**:
+   - The final line must echo a root keyword from Line 0 so the video loops endlessly and seamlessly on Shorts/Reels/TikTok.
+6. **`script.json` Schema**:
+   > [!IMPORTANT]
+   > `script.json` must be a JSON object containing the `lines` array (never a bare array):
+   ```json
+   {
+     "title": "Why Do We Get Goosebumps?",
+     "voice": "am_michael",
+     "speed": 1.10,
+     "lead": 0.45,
+     "gap": 0.30,
+     "outro": 0.90,
+     "emotion_arc": ["shocked", "alarmed", "curious", "determined"],
+     "lines": [
+       {
+         "text": "Nobody tells you goosebumps are a two million year mistake.",
+         "caps": "*NOBODY tells you | goosebumps are a *TWO MILLION year mistake.",
+         "emotion": "shocked",
+         "intensity": 0.9,
+         "mood": "tense"
+       }
+     ]
+   }
+   ```
+
+---
+
+### Phase 2: Local AI Voice & Word Alignment
+
+Scaffold the project and run the audio pipeline:
+```bash
+# 1. Scaffold project directory
+bash scripts/new_video.sh <style> <project-name>
+cd ~/faceless-shorts/<project-name>
+
+# 2. Generate Kokoro-82M ONNX speech (defaults to am_michael 1.10x)
+python scripts/voice.py .
+
+# 3. Align word timestamps using Whisper small.en
+python scripts/words.py .
+```
+- Outputs: `data/narration.wav` (speech audio), `data/lines.json` (exact cut timings), `data/words.json` (word-by-word timestamp map).
+
+---
+
+### Phase 3: Three.js 3D Architecture, Characters & Cutaways
+
+1. **Pure Three.js (ES Modules)**: Modular scene architecture, no primitive shapes for characters.
+2. **GLTF Asset Loading**:
+   - Load rooms from `assets/rooms/<ROOM>.glb` centered at $(0, 0, 0)$ with `receiveShadow = true`.
+   - Load humanoid characters from `assets/characters/<CHAR>.glb` grounded at $y = 0$ with `castShadow = true`.
+3. **Character & Outfit Configurator**:
+   - Traverse loaded meshes (`child.isMesh`). Target shirt mesh/material to swap colors dynamically (`#2563EB`, `#DC2626`, `#059669`) across scenes for visual variety.
+4. **Skeletal Animation & Secondary Motion**:
+   - Extract `gltf.animations` into a `THREE.AnimationMixer`. Crossfade smoothly (`fadeIn(0.3)`) between clips (`Idle`, `Talk`, `Gesture`).
+   - **NO T-POSES OR FROZEN LIMBS**: Character arms must perform expressive actions (shivering, facepalming, pointing, hugging arms, shrugging, holding props).
+   - Add procedural life to bones: spine breathing sway (`Math.sin(t * 2.5) * 0.03`), subtle head tilt, and eye blink blendshapes (`morphTargetInfluences['blink']`).
+5. **Strict No-3D-Text Rule**:
+   - **DO NOT** place 3D `TextGeometry` or floating 3D text sprites near characters in world space where they clip into faces or limbs.
+   - All subtitles, captions, and HUD elements must render in 2D HTML/CSS or 2D Canvas overlays.
+6. **3D Anatomical Cutaway Best Practices**:
+   - When building biological cross-sections (skin strata, organs, blood vessels, brain frisson):
+   - **Do NOT enclose elements inside an opaque centered box.**
+   - Model the cutaway block extending backwards from $z = 0$ into $-z$ (e.g. $z = 0$ to $z = -2.2$).
+   - Mount active internal components (hair bulb, arrector pili muscle, sympathetic nerve fiber, sebaceous gland) directly on or slightly in front of the cut plane ($z = 0.02 - 0.05$) in full 3D relief so they are 100% visible to the camera.
+
+---
+
+### Phase 4: Camera Framing & Strict Guards (`src/core/framing.js`)
+
+Implement camera moves using the framing grammar:
+- **Framing Heights & FOV**:
+  - Keep camera FOV between $40^\circ$ and $45^\circ$ to prevent wide-angle distortion.
+  - Position camera at eye-level or chest height, aimed at upper chest/shoulders (`(0, 1.4, 0)`), never inside the head mesh.
+- **Named Shot Sizes**:
+  - `WIDE`: Full body + wide environment ($15–25\%$ of runtime).
+  - `MEDIUM`: Head-to-toe full body, arms and hands clearly visible (**DEFAULT**, $40–50\%$).
+  - `MEDIUM_CU`: Waist-up, hands still visible in gestures ($15–20\%$).
+  - `CLOSE`: Head and shoulders ONLY for emotional peaks (max **1.5s** duration).
+  - `EXTREME`: Macro insert (eyes, phone screen, needle, follicle) (max **1.0s** duration).
+- **Sequence Grammar & Automated Guards**:
+  - **$\ge 60\%$ Full Body**: Combined `WIDE` + `MEDIUM` must exceed $60\%$ of total cuts.
+  - **No Consecutive Close Shots**: After any `CLOSE` or `EXTREME`, the next shot **must** return to `MEDIUM` or `WIDE`.
+  - **Hand Tracking**: During arm animations, hand bone screen coordinates must remain within bounds ($[0, 1]$ screen space).
+
+---
+
+### Phase 5: Remocn Programmatic Motion Graphics (`src/core/remocn_canvas.js`)
+
+Overlay 2D motion graphics onto the video using Remocn canvas primitives:
+- `REMOCN.glitchText(ctx, text, lt, opts)`: Chromatic glitch entry for hooks and shocking revelations.
+- `REMOCN.shimmerText(ctx, text, lt, opts)`: Gleaming metallic text sweep for key anatomical and character titles.
+- `REMOCN.rollingNumber(ctx, start, end, lt, opts)`: Animated counters for temperatures, percentages, and dollar amounts.
+- `REMOCN.progressHUD(ctx, opts)`: Sleek horizontal telemetry meter (adrenaline surge, timer, battery level).
+- `REMOCN.markerHighlight(ctx, text, lt, opts)`: Animated highlighter bar revealing keywords.
+- `REMOCN.notificationToast(ctx, opts)`: Floating iOS/social media notification cards.
+- `REMOCN.deviceMockup(ctx, opts)`: 3D-angled smartphone screen displaying text messages or alerts.
+- **Safe Zone Rule**: Center captions in the lower third ($y = 1250–1550$ in $1080\times 1920$). Keep top $15\%$ and bottom $15\%$ free of interactive UI.
+
+---
+
+### Phase 6: Sound Design & Procedural Audio Engine
+
+```bash
+# 1. Extract visual sound cues from shots.js
+node tools/capture.mjs cues
+
+# 2. Synthesize master audio mix
+python tools/mix.py .
+```
+- `data/cues.json`: Captures time-stamped visual triggers (`whoosh`, `thud`, `pop`, `sparkle`, `alarm`, `slide`).
+- `tools/mix.py`: Ducks background lo-fi music by $-14\text{ dB}$ during speech, synthesizes procedural SFX, and blends everything into master `data/mix.wav`.
+
+---
+
+### Phase 7: Verification & Contact Sheet QA (Mandatory Gate)
+
+Run the pre-flight checks:
+```bash
+# 1. Verify framing guards, durations, and shot grammar
+node tools/capture.mjs check
+# Must output: "FRAMING GUARD: OK" and "CHECK OK"
+
+# 2. Render 36-frame contact sheet
+node tools/capture.mjs sheet review/all.jpg 1.8 8
+```
+- **Visual Inspection**: Read the contact sheet image using your file inspection tool.
+  - Verify character arms are moving (no static pose across consecutive cuts).
+  - Confirm the camera is framed at upper chest/waist level, not suffocating the face.
+  - Verify that 3D cutaways and props are fully visible and not hidden behind opaque walls.
+  - Confirm captions are legible and have yellow highlight pops on spoken words.
+
+---
+
+### Phase 8: Final Rendering & Delivery
+
+```bash
+# 1. Render 720p draft preview (quick verification)
+node tools/capture.mjs video renders/test_720.mp4 --720 --draft
+
+# 2. Render broadcast-quality 1080x1920 master video
+node tools/capture.mjs video renders/<project-name>.mp4
+```
+
+**Delivery Package**:
+Present the finished short to the user with clickable `file:///` links:
+1. **Master Video (1080×1920 @ 30fps)**: `file:///path/to/renders/<project-name>.mp4`
+2. **Draft Preview (720×1280)**: `file:///path/to/renders/test_720.mp4`
+3. **Contact Sheet**: `file:///path/to/review/all.jpg`
+4. **Master Audio Mix**: `file:///path/to/data/mix.wav`
+5. **Production Summary Report**: Write a clean markdown delivery report artifact.
+
+---
+
+## 4. Troubleshooting & Golden Rules
+
+- **Windows Paths**: Use forward slashes in JS ES module imports (`./core/sets.js`). When calling shell commands with paths containing spaces, wrap them in double quotes.
+- **Headless Chrome Cleanup**: On Windows, wrap temporary Chrome profile directory deletion in a `try/catch` with a $400\text{ms}$ delay to avoid `EPERM` file locking.
+- **Script Schema Safeguard**: `scripts/voice.py` and `scripts/words.py` support both `{ "lines": [...] }` and bare `[...]`, but always author `script.json` as an object with `title`, `voice`, and `lines`.
+- **Never Use Delta In Animation**: Never use `delta` or `requestAnimationFrame` accumulators in `draw(lt, d, t)`. Every transformation, position, rotation, and opacity must be a deterministic closed-form function of local time `lt` or film time `t`.

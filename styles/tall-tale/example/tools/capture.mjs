@@ -162,8 +162,31 @@ if (mode === 'preview') {
       for (const s of await P.ev('OP.shots()')) console.log(`${s.id.padEnd(5)} ${s.at.toFixed(2).padStart(6)} → ${s.end.toFixed(2).padStart(6)}  (${(s.end - s.at).toFixed(2)} s)  ${s.note}`);
       console.log('captions:'); for (const c of await P.ev('OP.captions()')) console.log(`  ${c.s.toFixed(2).padStart(6)}–${c.e.toFixed(2).padEnd(6)} ${c.text}`);
       let bad = 0; for (let t = 0; t < dur; t += 0.25) { try { await P.ev(`OP.draw(${t})`); } catch (e) { bad++; console.log(`ERROR at ${t.toFixed(2)}: ${e.message.split('\n')[0]}`); } }
+
+      let framingRes = null;
+      try {
+        framingRes = await P.ev('OP.checkFraming ? OP.checkFraming() : { ok: true, issues: [] }');
+        if (framingRes && !framingRes.ok) {
+          console.log('\nFRAMING GUARD VIOLATIONS:');
+          for (const iss of framingRes.issues) {
+            console.log(`  - [FAIL] ${iss}`);
+          }
+          bad += framingRes.issues.length;
+        } else if (framingRes) {
+          console.log('\nFRAMING GUARD: OK (all shot sizes, durations, and hand tracking verified)');
+        }
+      } catch (err) {
+        console.error('Framing check error:', err);
+        bad++;
+      }
+
       if (P.logs.length) console.log(P.logs.join('\n'));
-      console.log(bad || P.logs.length ? 'CHECK FAILED' : 'CHECK OK');
+      if (bad || P.logs.length) {
+        console.log('\nCHECK FAILED');
+        process.exitCode = 1;
+      } else {
+        console.log('\nCHECK OK');
+      }
     } else if (mode === 'cues') {
       const cues = await P.ev('OP.cues()');
       fs.mkdirSync(path.join(ROOT, 'data'), { recursive: true });
@@ -184,8 +207,10 @@ if (mode === 'preview') {
     } else if (mode === 'video') {
       const out = path.resolve(ROOT, rest[0] || 'renders/video.mp4'); fs.mkdirSync(path.dirname(out), { recursive: true });
       const mix = path.join(ROOT, 'data/mix.wav'), hasMix = fs.existsSync(mix), a0 = rest[1] ? +rest[1] : 0, a1 = rest[2] ? Math.min(+rest[2], dur) : dur, n = Math.round((a1 - a0) * FPS);
+      const is720 = flags.has('--720') || out.includes('720');
       const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(FPS), '-i', '-',
         ...(hasMix ? ['-ss', String(a0), '-t', String(a1 - a0), '-i', mix] : ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']), '-map', '0:v', '-map', '1:a',
+        ...(is720 ? ['-vf', 'scale=720:1280'] : []),
         '-c:v', 'libx264', '-preset', flags.has('--draft') ? 'ultrafast' : 'veryfast', '-crf', flags.has('--draft') ? '28' : '18', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
       const t0 = Date.now();

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "beat_01_hook",
+    "duration": 4.5,
+    "cameraPos": [0.0, 1.48, 2.7],
+    "cameraLookAt": [0.0, 1.38, 0.0],
+    "animationClip": "Idle",
+    "shirtColor": "#2563EB",
+    "subtitleText": "What if you could build <span class='hl'>cinematic 3D animation</span> directly in pure Three.js?"
+  },
+  {
+    "id": "beat_02_explanation",
+    "duration": 5.2,
+    "cameraPos": [-0.75, 1.52, 2.3],
+    "cameraLookAt": [0.0, 1.38, 0.0],
+    "animationClip": "Talk",
+    "shirtColor": "#10B981",
+    "subtitleText": "Real external <span class='accent'>.glb rigs</span>, smooth crossfades, and zero primitive placeholders."
+  },
+  {
+    "id": "beat_03_gesture",
+    "duration": 4.8,
+    "cameraPos": [0.8, 1.44, 2.4],
+    "cameraLookAt": [0.0, 1.36, 0.0],
+    "animationClip": "Gesture",
+    "shirtColor": "#F97316",
+    "subtitleText": "Notice the dynamic outfit configurator: swapping from royal blue to <span class='hl'>vibrant amber</span>."
+  },
+  {
+    "id": "beat_04_alive_details",
+    "duration": 5.0,
+    "cameraPos": [0.0, 1.45, 1.95],
+    "cameraLookAt": [0.0, 1.38, 0.0],
+    "animationClip": "Talk",
+    "shirtColor": "#8B5CF6",
+    "subtitleText": "Breathing cycles, blinking blendshapes, and conversational nods keep the character <span class='accent'>vividly alive</span>."
+  },
+  {
+    "id": "beat_05_recap",
+    "duration": 4.5,
+    "cameraPos": [0.0, 1.55, 3.2],
+    "cameraLookAt": [0.0, 1.35, 0.0],
+    "animationClip": "Idle",
+    "shirtColor": "#EC4899",
+    "subtitleText": "Completely decoupled from 3D text clipping, rendered in a crisp <span class='hl'>2D HTML/CSS HUD</span>."
+  }
+]

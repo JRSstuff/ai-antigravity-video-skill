@@ -1,0 +1,58 @@
+{
+  "title": "Three Mistakes That Kill Retention",
+  "voice": "am_michael",
+  "speed": 1.10,
+  "lead": 0.35,
+  "outro": 1.0,
+  "gap": 0.28,
+  "music": "bed",
+  "emotion_arc": ["shocked", "anxious", "determined", "relieved", "hopeful"],
+  "shot_size_mix": {
+    "WIDE": 0.20,
+    "MEDIUM": 0.50,
+    "MEDIUM_CU": 0.20,
+    "CLOSE": 0.10,
+    "EXTREME": 0.00
+  },
+  "sources": [
+    "YouTube Creator Retention Benchmarks",
+    "Remocn Motion Design Patterns (github.com/Remocn/remocn)"
+  ],
+  "lines": [
+    {
+      "text": "Three seconds is where eighty percent of viewers scroll away.",
+      "caps": "*Three* seconds | is where eighty percent | of viewers *scroll away.*",
+      "emotion": "shocked",
+      "intensity": 0.9,
+      "remocn_component": "RollingNumber + BlurReveal"
+    },
+    {
+      "text": "Mistake one. You start with a five-second greeting.",
+      "caps": "Mistake *one.* | You start with | a five-second *greeting.*",
+      "emotion": "anxious",
+      "intensity": 0.8,
+      "remocn_component": "DeviceMockup + NotificationToast"
+    },
+    {
+      "text": "Nobody cares who you are until they care what you know.",
+      "caps": "Nobody *cares* | who you are | until they care | *what you know.*",
+      "emotion": "determined",
+      "intensity": 0.95,
+      "remocn_component": "MarkerHighlight + ShimmerSweep"
+    },
+    {
+      "text": "Start inside the conflict. Deliver before you ask.",
+      "caps": "*Start* inside the conflict. | *Deliver* before you ask.",
+      "emotion": "relieved",
+      "intensity": 0.85,
+      "remocn_component": "TerminalSimulator"
+    },
+    {
+      "text": "Every second counts. Especially the first three.",
+      "caps": "*Every* second counts. | Especially the first *three.*",
+      "emotion": "hopeful",
+      "intensity": 0.9,
+      "remocn_component": "GlitchText + ReplayLoop"
+    }
+  ]
+}

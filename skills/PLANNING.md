@@ -20,10 +20,14 @@ When a user provides a video idea—whether detailed or vague (e.g., *"make a vi
 | **audience** | Who is watching? | **General, ages 12+, family-friendly** |
 | **style** | Which visual style? | **Auto-recommended from topic** (see Style Recommender below) |
 | **length** | What length? (30s / 45s / 55s / 60s / 90s) | **55s** (optimal for YouTube Shorts / Reels retention) |
-| **hook** | Opening line type: shocking claim, question, countdown, or "what if"? | **Shocking claim / visual gag in first 3 seconds** |
-| **tone** | Funny, serious, spooky, or calm? | **Fast & funny with a deadpan/curious narrator** |
+| **hook** | Opening line type: shocking claim, question, countdown, or "what if"? | **Shocking claim / visual gag in first 3 seconds** (Scored $\ge 60$ via `scripts/writer.py`) |
+| **hook_formula** | Which of 26 proven hook formulas? | **Cost Confession, Nobody Tells You, or Negative Command** (see [skills/WRITING.md](skills/WRITING.md)) |
+| **tone** | Funny, serious, spooky, or calm? | **Fast & funny with a deadpan/curious narrator** (Stripped of AI slop via `humanize`) |
 | **character** | Recurring character featured? | **Justine (cowlick kid)** with animated skeletal arms via rig |
-| **ending** | Open loop to Part 2, punchline loop, or clear takeaway? | **Open loop teaser to Part 2** |
+| **ending** | Open loop to Part 2, punchline loop, or clear takeaway? | **Replay Loop** (last word echoes opening hook keyword) |
+| **emotion_arc** | List of emotional/mood beats across the video? | **shocked > anxious > angry > heartbroken > determined > calm > hopeful** |
+| **shot_size_mix** | Distribution of shot sizes across runtime? | **WIDE 25% · MEDIUM 40% (default) · MEDIUM_CU 20% · CLOSE 10% (max 1.5s) · EXTREME 5%** |
+| **motion_kit** | Visual motion & typography components? | **Remocn Motion Kit** (`shimmerText`, `notificationToast`, `rollingNumber`, `markerHighlight`) |
 | **language** | Narration language & voice? | **English** (`am_michael` Kokoro voice, 1.10–1.12x speed) |
 | **facts** | Any mandatory facts, statistics, or sources? | **2–3 verified medical/scientific sources** cited in `script.json` |
 | **extras** | Music mood, HUD labels, sound palette? | **Upbeat quirky music bed (ducked)** + procedural SFX on highlights |
@@ -42,6 +46,7 @@ When the user doesn't specify a style, select automatically based on topic keywo
 | *Survival guides / life hacks / emergency steps / "what would you do if"* | **Stick Story** (`stick-story`) | Stylized stick heroes with expressive acting eyes, flat environments, gold tactical step cards |
 | *Military history / battles / trade routes / geography / voyages* | **Paper Atlas** (`paper-atlas`) | Cut-paper textured parchment maps, crimson movement routes, gold ribbon dates, period figure silhouettes |
 | *Unsolved mysteries / true crime / paranormal / eerie historical events* | **Night File 3D** (`night-file`) | Dark 3D environments, single harsh spotlight, red glowing silhouette subjects, typewriter text, case folders |
+| *Tech breakdowns / SaaS features / kinetic typography / countdown stats / modern social clips* | **Remocn Motion** (`remocn`) | Modern kinetic typography, device mockups, notification toasts, rolling counters, smooth spring transitions |
 
 ---
 
@@ -103,6 +108,16 @@ Write the resolved configuration into `<project-dir>/brief.json`:
     "features": ["giant cowlick", "articulated arms"],
     "required_reactions": ["panic", "point", "sigh", "celebrate", "shrug"]
   },
+  "emotion_arc": [
+    "shocked", "anxious", "angry", "heartbroken", "determined", "calm", "hopeful"
+  ],
+  "shot_size_mix": {
+    "WIDE": 0.25,
+    "MEDIUM": 0.40,
+    "MEDIUM_CU": 0.20,
+    "CLOSE": 0.10,
+    "EXTREME": 0.05
+  },
   "ending": "open loop",
   "language": "en",
   "voice": "am_michael",
@@ -128,6 +143,8 @@ Present this summary to the user and pause for confirmation (**"Build it?"**):
 * **Style**: [e.g., Deep Dive 3D (`deep-dive`)] · **Target Duration**: [e.g., ~55s (1,850 frames @ 30fps)]
 * **Narrator & Tone**: [Voice, speed, delivery tone]
 * **Character**: [Character name, rig, key arm reactions]
+* **Emotion Arc**: shocked > anxious > angry > heartbroken > determined > calm > hopeful
+* **Shot-Size Mix**: WIDE 25% | MEDIUM 40% (default) | MEDIUM_CU 20% | CLOSE 10% (max 1.5s) | EXTREME 5%
 * **Hook (0:00–0:03)**: [Opening spoken line + visual action]
 * **Key Visual Gags**:
   1. [Gag 1]
@@ -149,8 +166,14 @@ Present this summary to the user and pause for confirmation (**"Build it?"**):
 
 ## 6. Phase 0 Quality Gate (Mandatory Pre-Render Check)
 
-Before launching the final video capture (`capture.mjs video`), you must pass this 5-point quality gate:
+Before launching the final video capture (`capture.mjs video`), you must pass this quality gate:
 
+0. **Script & Hook Audit**:
+   Run `python scripts/writer.py audit-script script.json`. Must confirm:
+   - Hook score $\ge 60$ (5-factor formula, frontloaded payload, concrete marker).
+   - Zero AI slop words and zero invisible characters.
+   - Pacing rate at 150–165 WPM with no cut $> 3.8\,\text{s}$ without sub-cuts.
+   - Replay loop verified (closing line echoes hook keyword).
 1. **Deterministic Test Execution**:
    Run `node tools/capture.mjs check`. It must print `CHECK OK` across all frames with zero errors.
 2. **Pacing Rule Verification**:
